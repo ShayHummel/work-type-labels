@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+import os
 import json
 import shutil
 import time
@@ -26,8 +27,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn.functional as F
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+import torch  # noqa: E402
+import torch.nn.functional as F  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 LABELS = ["Bug fix", "Feature dev", "Refactoring", "Architecting", "Researching",
@@ -40,8 +42,10 @@ MODELS = {
     "deberta-v3-large": dict(hf="microsoft/deberta-v3-large", lr=1e-5, bs=8, accum=2, max_len=512),
     "modernbert-large": dict(hf="answerdotai/ModernBERT-large", lr=2e-5, bs=16, accum=1, max_len=1024),
     "mmbert-base": dict(hf="jhu-clsp/mmBERT-base", lr=3e-5, bs=16, accum=1, max_len=1024),
-    "qwen3-0.6b-lora": dict(hf="Qwen/Qwen3-0.6B", lr=1e-4, bs=16, accum=1, max_len=1024, lora=True),
-    "qwen3-1.7b-lora": dict(hf="Qwen/Qwen3-1.7B", lr=1e-4, bs=8, accum=2, max_len=1024, lora=True),
+    # LoRA: frozen base in bf16 + gradient checkpointing; 512 tokens covers ~90% of prompts whole (head+tail for the
+    # rest). At 1024 tokens × batch 16 with an fp32 base, Qwen3-0.6B ran out of memory on a 40 GB A100.
+    "qwen3-0.6b-lora": dict(hf="Qwen/Qwen3-0.6B", lr=1e-4, bs=16, accum=1, max_len=512, lora=True),
+    "qwen3-1.7b-lora": dict(hf="Qwen/Qwen3-1.7B", lr=1e-4, bs=8, accum=2, max_len=512, lora=True),
 }
 TAIL_TOKENS = 128  # head+tail truncation keeps the last 128 tokens (the request often comes after pasted code)
 
@@ -153,14 +157,20 @@ def run_fold(key: str, fold: int, args) -> None:
     tok = AutoTokenizer.from_pretrained(cfg["hf"])
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
+    lora = bool(cfg.get("lora"))
+    base_dtype = torch.bfloat16 if (lora and bf16) else torch.float32  # frozen base may be bf16; trained weights fp32
     model = AutoModelForSequenceClassification.from_pretrained(
         cfg["hf"], num_labels=len(LABELS), id2label=dict(enumerate(LABELS)),
-        label2id={lab: i for i, lab in enumerate(LABELS)}, torch_dtype=torch.float32)
+        label2id={lab: i for i, lab in enumerate(LABELS)}, dtype=base_dtype)
     model.config.pad_token_id = tok.pad_token_id
-    if cfg.get("lora"):
+    if lora:
         from peft import LoraConfig, get_peft_model
+        model.enable_input_require_grads()  # needed for gradient checkpointing with a frozen base
         model = get_peft_model(model, LoraConfig(task_type="SEQ_CLS", r=16, lora_alpha=32, lora_dropout=0.05,
                                                  target_modules="all-linear"))
+        for name, prm in model.named_parameters():  # adapters and the new head train in fp32
+            if prm.requires_grad:
+                prm.data = prm.data.float()
 
     texts = train.text.values
     ds_tr = TextDataset(encode(tok, list(texts[tr_idx]), max_len), y[tr_idx])
@@ -190,6 +200,7 @@ def run_fold(key: str, fold: int, args) -> None:
         per_device_eval_batch_size=cfg["bs"] * 2, gradient_accumulation_steps=cfg["accum"], warmup_steps=0.1,
         weight_decay=0.01, lr_scheduler_type="linear", bf16=bf16, fp16=fp16, train_sampling_strategy="group_by_length",
         save_strategy="steps", save_steps=args.save_steps, save_total_limit=1, eval_strategy="no",
+        gradient_checkpointing=lora, gradient_checkpointing_kwargs={"use_reentrant": False} if lora else None,
         logging_steps=50, report_to="none", seed=42, dataloader_num_workers=2 if dev == "cuda" else 0)
     trainer = WeightedTrainer(model=model, args=targs, train_dataset=ds_tr, processing_class=tok,
                               data_collator=DataCollatorWithPadding(tok))
@@ -213,7 +224,7 @@ def run_fold(key: str, fold: int, args) -> None:
     done = {"key": key, "hf": cfg["hf"], "fold": fold, "n_train": len(ds_tr), "n_val": len(ds_va),
             "max_len": max_len, "truncation": f"head+tail{TAIL_TOKENS}", "epochs": args.epochs,
             "lr": args.lr or cfg["lr"], "batch": cfg["bs"] * cfg["accum"], "class_weight": args.class_weight,
-            "lora": bool(cfg.get("lora")), "device": gpu, "bf16": bf16, "fp16": fp16,
+            "lora": lora, "base_dtype": str(base_dtype), "device": gpu, "bf16": bf16, "fp16": fp16,
             "train_seconds": round(t_train, 1), "total_seconds": round(time.time() - t0, 1),
             "transformers": transformers.__version__, "limit": args.limit, "max_steps": args.max_steps,
             "val_accuracy": float((pv.argmax(1) == y[va_idx]).mean()), "val_macro_F1": float(f1.mean()),

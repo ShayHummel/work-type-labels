@@ -288,3 +288,10 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 
 ### Colab: Qwen3-0.6B + LoRA failed at start
 - Colab ships torchao 0.10, and peft 0.21 refuses torchao < 0.16 when injecting LoRA layers. We do not use torchao, so the notebook now uninstalls it.
+- **Second Colab failure: CUDA out of memory** (A100 40 GB) on the first step of Qwen3-0.6B + LoRA: fp32 base, batch 16, 1,024 tokens, and the length-grouped sampler starts with the longest batch.
+  - **Fix for the LoRA configs:**
+    - the frozen base is loaded in bf16, while the adapters and the new head are kept in fp32 and the loss is still computed in fp32;
+    - gradient checkpointing is on;
+    - max length is 512 (about 90% of prompts fit whole; head+tail for the rest);
+    - `expandable_segments` is set to reduce fragmentation.
+  - **Verified locally:** a bf16 base with fp32 adapters under autocast runs forward and backward with checkpointing; all 393 trainable tensors get fp32 gradients. The full job passes the smoke test.
