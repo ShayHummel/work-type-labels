@@ -24,7 +24,8 @@ RNG = np.random.default_rng(0)
 
 LABELS = ["Bug fix", "Feature dev", "Refactoring", "Architecting", "Researching",
           "Testing", "Review", "Optimize", "Setup", "Other"]
-# Holdout support published in TASK.md (DistilBERT table).
+# 'Support' column printed in TASK.md (DistilBERT table). Context only: presumably the teacher-label
+# counts of the holdout, but TASK.md does not say so and the labels are noisy. Not used anywhere else.
 HOLDOUT_SUPPORT = {"Bug fix": 885, "Feature dev": 1381, "Refactoring": 262, "Architecting": 247,
                    "Researching": 1221, "Testing": 128, "Review": 171, "Optimize": 49,
                    "Setup": 316, "Other": 1539}
@@ -80,9 +81,9 @@ md()
 dist = pd.DataFrame({
     "train n": train.label.value_counts().reindex(LABELS),
     "train %": train.label.value_counts(normalize=True).reindex(LABELS) * 100,
-    "holdout n (TASK.md)": pd.Series(HOLDOUT_SUPPORT),
+    "TASK.md support (unverified)": pd.Series(HOLDOUT_SUPPORT),
 })
-dist["holdout %"] = dist["holdout n (TASK.md)"] / dist["holdout n (TASK.md)"].sum() * 100
+dist["TASK.md support %"] = dist["TASK.md support (unverified)"] / dist["TASK.md support (unverified)"].sum() * 100
 dist = dist.sort_values("train n", ascending=False)
 table(dist, ".1f")
 md(f"Imbalance ratio largest/smallest class: {dist['train n'].max() / dist['train n'].min():.0f}×")
@@ -91,7 +92,7 @@ md()
 fig, ax = plt.subplots(figsize=(8, 4))
 x = np.arange(len(dist))
 ax.bar(x - 0.2, dist["train %"], 0.4, label="train")
-ax.bar(x + 0.2, dist["holdout %"], 0.4, label="holdout (published support)")
+ax.bar(x + 0.2, dist["TASK.md support %"], 0.4, label="TASK.md support (unverified)")
 ax.set_xticks(x, dist.index, rotation=35, ha="right")
 ax.set_ylabel("% of rows")
 ax.legend()

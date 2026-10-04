@@ -6,11 +6,11 @@ an (n, 10) probability matrix in LABELS order.
 Reported per class: precision, recall, F1, support, ROC-AUC, PR-AUC, with 95% bootstrap CIs; overall:
 accuracy, macro-F1, min-F1 (the TASK.md bar is min-F1 ≥ 0.8); and the confusion matrix.
 
-Confidence intervals are computed at **holdout scale**: each bootstrap replicate draws, per class, exactly
-the holdout support published in TASK.md (e.g. 49 Optimize rows) from the OOF rows of that class, with
-replacement. The interval therefore says how much the holdout score can move by sampling alone.
-Precision and PR-AUC depend on prevalence, so their holdout-scale CIs can sit slightly off the OOF point
-estimate when a class is a little more frequent in the holdout than in train (e.g. Testing 2.1% vs 1.8%).
+Confidence intervals are computed at **holdout scale**: each bootstrap replicate has 6,199 rows (the size
+of holdout.jsonl) with the *train* class proportions (e.g. 39 Optimize rows), drawn per class from the OOF
+rows of that class, with replacement. The interval therefore says how much a score on a holdout-sized
+sample can move by sampling alone. Only train.jsonl is used; the support column printed in TASK.md is not
+an input (we cannot verify what it counts).
 
 p-values:
 - `p(F1 ≤ 0.8)`: one-sided bootstrap test of H0 "class F1 is at or below the bar"; small = bar met.
@@ -35,7 +35,7 @@ LABELS = ["Bug fix", "Feature dev", "Refactoring", "Architecting", "Researching"
           "Testing", "Review", "Optimize", "Setup", "Other"]
 K = len(LABELS)
 LABEL2ID = {lab: i for i, lab in enumerate(LABELS)}
-HOLDOUT_SUPPORT = np.array([885, 1381, 262, 247, 1221, 128, 171, 49, 316, 1539])
+HOLDOUT_ROWS = 6199  # len(holdout.jsonl)
 BAR = 0.8
 
 
@@ -56,12 +56,20 @@ def _prf_from_cm(cm: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return p, r, f
 
 
+def boot_class_counts(y: np.ndarray) -> np.ndarray:
+    """Rows per class in a holdout-sized replicate: train proportions × HOLDOUT_ROWS (largest remainder)."""
+    exact = np.bincount(y, minlength=K) / len(y) * HOLDOUT_ROWS
+    counts = np.floor(exact).astype(int)
+    counts[np.argsort(-(exact - counts))[:HOLDOUT_ROWS - counts.sum()]] += 1
+    return counts
+
+
 def _stratified_boot_idx(y: np.ndarray, rng: np.random.Generator, n_boot: int) -> np.ndarray:
-    """(n_boot, sum(HOLDOUT_SUPPORT)) row indices, holdout class counts per replicate."""
+    """(n_boot, HOLDOUT_ROWS) row indices, class counts fixed by boot_class_counts."""
     parts = []
-    for c in range(K):
+    for c, n_c in enumerate(boot_class_counts(y)):
         rows = np.flatnonzero(y == c)
-        parts.append(rows[rng.integers(0, len(rows), size=(n_boot, HOLDOUT_SUPPORT[c]))])
+        parts.append(rows[rng.integers(0, len(rows), size=(n_boot, n_c))])
     return np.concatenate(parts, axis=1)
 
 
@@ -105,7 +113,7 @@ def evaluate(y_true, y_pred, proba: np.ndarray | None = None, n_boot: int = 1000
         per["p(AUC=0.5)"] = p_auc
         per["PR-AUC"] = pr
         per["PR lo"], per["PR hi"] = np.array(pr_ci).T
-        per["PR chance"] = HOLDOUT_SUPPORT / HOLDOUT_SUPPORT.sum()
+        per["PR chance"] = np.bincount(y, minlength=K) / len(y)
 
     macro = f1.mean()
     perm_macro = []

@@ -81,7 +81,7 @@ Script: `src/01_eda.py` → `reports/01_eda.md` + `reports/figures/01_*.png`.
 - **Evaluation module** (`src/evaluation.py`), used by every model on out-of-fold predictions:
   - Per class: precision, recall, F1, ROC-AUC and PR-AUC (one-vs-rest).
   - Overall: confusion matrix, accuracy, macro-F1, and **min-F1**, the bar from TASK.md.
-  - **95% bootstrap CIs at holdout scale.** Each replicate draws, per class, exactly the holdout support published in TASK.md (e.g. 49 Optimize rows), so each interval shows how much the holdout score can move from sampling alone.
+  - **95% bootstrap CIs at holdout scale.** Each replicate has 6,199 rows (the holdout size) with the train class proportions (e.g. 39 Optimize rows), so each interval shows how much a score on a holdout-sized sample can move from sampling alone.
 - **p-values:**
   - `p(F1≤0.8)`: one-sided bootstrap test that the class misses the bar.
   - `p(AUC=0.5)`: Mann–Whitney U.
@@ -91,5 +91,8 @@ Script: `src/01_eda.py` → `reports/01_eda.md` + `reports/figures/01_*.png`.
   - A random classifier gives AUC ≈ 0.5, `p(F1≤0.8)` = 1 for every class, and no significant AUCs.
   - Under random predictions, 10 runs of the permutation p-value come out roughly uniform (0.005–0.99), so the test is calibrated.
   - Results: `reports/02_folds.md`.
+
+- **Revision (Shay's review):** the first version scaled the bootstrap to the per-class "Support" column printed in TASK.md. That column presumably counts the holdout's teacher labels, but TASK.md does not say so explicitly, and those labels are noisy anyway. The bootstrap now uses train proportions × 6,199, and the evaluation depends on `train.jsonl` only. The TASK.md column is shown in the EDA as unverified context and is not used anywhere else.
+- **Reminder on label quality:** all scores, ours and Zuzai's, measure agreement with the teacher LLM, not correctness. Disagreement between the teacher's labels on near-identical text (EDA §4) caps what any model can reach. The note will separate model errors from these collisions.
 
 **Next** — Step 3, model exploration (candidates proposed by Shay: code-tuned embeddings + linear/LogReg/SVM; DeBERTa-v3 fine-tune; Hugging Face search for task-related models).
