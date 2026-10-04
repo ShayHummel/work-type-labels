@@ -6,8 +6,9 @@ For fold k it trains on the other four folds (data/folds.csv) and writes
     <out>/ft/<key>/fold{k}/holdout_proba.npy  (6199, 10)
     <out>/ft/<key>/fold{k}/done.json          config, timings, device, fold-k metrics
     <out>/exports/ft_<key>.zip                every finished fold of <key> (re-zipped after each fold)
-Checkpoints go to <out>/ft/<key>/fold{k}/ckpt/ every --save-steps steps; a rerun resumes from the last one and
-skips finished folds. Checkpoints are deleted once the fold is done.
+Checkpoints go to <out>/ft/<key>/fold{k}/ckpt/ (or --ckpt-root/<key>/fold{k}) every --save-steps steps; a rerun
+resumes from the last complete one and skips finished folds. Checkpoints are deleted once the fold is done.
+Results per fold are small (≈ 0.5 MB); checkpoints are not (DeBERTa-v3-base ≈ 2.2 GB with optimizer state).
 
 The loss is weighted cross-entropy computed in float32 on float32 logits (TASK.md: a Half/Float mismatch in
 the weighted loss made a larger encoder collapse to one class).
@@ -129,6 +130,8 @@ def run_fold(key: str, fold: int, args) -> None:
         log(args.out, key, f"fold {fold} already done — skipping")
         return
     fdir.mkdir(parents=True, exist_ok=True)
+    # Checkpoints (weights + optimizer, GBs) can live off Drive (--ckpt-root /content/ckpt); results stay in fdir.
+    ckpt = (args.ckpt_root / key / f"fold{fold}") if args.ckpt_root else (fdir / "ckpt")
     t0 = time.time()
 
     train = pd.read_json(args.data_dir / "train.jsonl", lines=True)
@@ -182,7 +185,7 @@ def run_fold(key: str, fold: int, args) -> None:
             return (loss, outputs) if return_outputs else loss
 
     targs = TrainingArguments(
-        output_dir=str(fdir / "ckpt"), num_train_epochs=args.epochs, max_steps=args.max_steps or -1,
+        output_dir=str(ckpt), num_train_epochs=args.epochs, max_steps=args.max_steps or -1,
         learning_rate=args.lr or cfg["lr"], per_device_train_batch_size=cfg["bs"],
         per_device_eval_batch_size=cfg["bs"] * 2, gradient_accumulation_steps=cfg["accum"], warmup_steps=0.1,
         weight_decay=0.01, lr_scheduler_type="linear", bf16=bf16, fp16=fp16, train_sampling_strategy="group_by_length",
@@ -190,7 +193,7 @@ def run_fold(key: str, fold: int, args) -> None:
         logging_steps=50, report_to="none", seed=42, dataloader_num_workers=2 if dev == "cuda" else 0)
     trainer = WeightedTrainer(model=model, args=targs, train_dataset=ds_tr, processing_class=tok,
                               data_collator=DataCollatorWithPadding(tok))
-    last = last_complete_checkpoint(fdir / "ckpt")
+    last = last_complete_checkpoint(ckpt)
     log(args.out, key, f"fold {fold}: train {len(ds_tr)}, val {len(ds_va)}, device {gpu}, bf16={bf16} fp16={fp16}, "
                        f"class_weight={args.class_weight}, " + (f"RESUMING from {last}" if last else "starting"))
     trainer.train(resume_from_checkpoint=last)
@@ -216,7 +219,7 @@ def run_fold(key: str, fold: int, args) -> None:
             "val_accuracy": float((pv.argmax(1) == y[va_idx]).mean()), "val_macro_F1": float(f1.mean()),
             "val_min_F1": float(f1.min()), "val_F1": dict(zip(LABELS, map(float, f1)))}
     (fdir / "done.json").write_text(json.dumps(done, indent=2))
-    shutil.rmtree(fdir / "ckpt", ignore_errors=True)
+    shutil.rmtree(ckpt, ignore_errors=True)
     log(args.out, key, f"fold {fold} DONE in {done['total_seconds']:.0f}s — val macro-F1 {f1.mean():.3f}, "
                        f"min-F1 {f1.min():.3f}, acc {done['val_accuracy']:.3f}")
     del trainer, model
@@ -229,6 +232,8 @@ def main() -> None:
     ap.add_argument("--model", required=True, choices=list(MODELS))
     ap.add_argument("--folds", nargs="+", type=int, default=[0])
     ap.add_argument("--out", type=Path, default=ROOT / "data")
+    ap.add_argument("--ckpt-root", type=Path, default=None,
+                    help="where checkpoints go (default: inside --out). On Colab use local VM disk to spare Drive")
     ap.add_argument("--data-dir", type=Path, default=ROOT)
     ap.add_argument("--epochs", type=float, default=3)
     ap.add_argument("--lr", type=float, default=None)

@@ -254,3 +254,11 @@ Script `src/05_embedding_models.py`, same protocol as block 1. A bug in the grid
   - Optimising min-F1 directly chases the noisiest class (Optimize, 31 rows per fold).
   - Conclusion: do not use a min-F1-tuned bias. If a decision layer is used, it needs a smoother objective (e.g. macro-F1, or a single shared prior-correction parameter) and must again be cross-fitted.
 - **Where it stands:** 4 classes are clearly ≥ 0.8 (Other 0.89, Bug fix 0.86, Feature dev 0.82, Researching 0.82). Testing is at 0.79. Setup 0.76, Refactoring 0.70, Optimize 0.65, Architecting 0.64 and Review 0.58 are still short of 0.8.
+
+### Colab fine-tuning: Google Drive ran out of space (16:30)
+
+- **Cause:** checkpoints were written to Drive. Each one holds model + optimizer state (DeBERTa-v3-base ≈ 2.2 GB, ModernBERT-large ≈ 4.7 GB), and the peak is ×2 while a checkpoint is being replaced. About 2.5 GB of embedding chunks and zips were also still on Drive.
+- **Fix:** new `--ckpt-root` option. On Colab, checkpoints now go to the VM disk (`/content/ckpt`), and only the results (≈ 0.5 MB per fold) go to Drive.
+  - Trade-off: if the VM itself is replaced, the running fold restarts (≈ 7–15 min on A100) instead of resuming.
+- **Notebook:** a cleanup cell removes embedding chunks and old checkpoint folders from Drive (the Drive trash must be emptied by hand).
+- **Jobs (Shay: fine-tune in parallel with the error analysis):** DeBERTa-v3-base folds 0–4, then Qwen3-0.6B + LoRA folds 0–4.
