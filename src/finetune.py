@@ -130,7 +130,7 @@ def run_fold(key: str, fold: int, args) -> None:
 
     dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     gpu = torch.cuda.get_device_name(0) if dev == "cuda" else dev
-    bf16 = dev == "cuda" and torch.cuda.is_bf16_supported()
+    bf16 = dev == "cuda" and torch.cuda.get_device_capability(0)[0] >= 8  # native bf16 (A100/L4), not T4 emulation
     fp16 = dev == "cuda" and not bf16
     max_len = args.max_len or cfg["max_len"]
 

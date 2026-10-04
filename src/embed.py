@@ -96,7 +96,9 @@ def embed_model(key: str, texts: list[str], ids: list[str], n_train: int, out: P
     log(out, key, f"device={dev} ({gpu}, {mem_gb:.0f} GB); {n_chunks - len(todo)}/{n_chunks} chunks already done")
     t_start = time.time()
     if todo:
-        dtype = torch.bfloat16 if dev == "cuda" else torch.float16
+        # Native bf16 only on Ampere+ (A100, L4: compute capability >= 8); T4 would emulate it slowly → fp16.
+        native_bf16 = dev == "cuda" and torch.cuda.get_device_capability(0)[0] >= 8
+        dtype = torch.bfloat16 if native_bf16 else torch.float16
         model = SentenceTransformer(model_id, device=dev, trust_remote_code=True,
                                     model_kwargs={"torch_dtype": dtype, **kwargs})
         model.max_seq_length = max_len
