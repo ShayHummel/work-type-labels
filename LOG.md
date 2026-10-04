@@ -56,4 +56,40 @@ Script: `src/01_eda.py` → `reports/01_eda.md` + `reports/figures/01_*.png`.
 - Use a long-context encoder (≥ 512 tokens) or head+tail truncation, multilingual if possible.
 - Expect a noise ceiling below 0.8 on some pairs (Bug fix/Feature dev, Review/Researching, Refactoring/Feature dev). Error analysis must separate label collisions from model errors.
 
-**Next** — decision pending.
+**Next** — review with Shay.
+
+### Step 1 follow-up — review questions (09:40–10:20)
+
+- **Label count table and top n-grams per label:** `src/01b_label_ngrams.py` → `reports/01b_label_ngrams.md`.
+  - Per label, a TF-IDF vectorizer is fitted for unigrams, bigrams and trigrams; the top-10 by mean weight are listed.
+  - A second table ranks n-grams by how distinctive they are (class vs rest).
+  - Repeated prompt templates dominate several lists: "passage … book" for Other, "shell script creates changes" for Feature dev and Refactoring.
+- **"Still truncated. Try again." (rows 210–211) is an anecdote, not evidence.** It was withdrawn as support. Measured instead: 12.9% of prompts have ≤ 6 words, mostly Other (34%) and Researching (28%).
+- **Alignment claim, quantified.** For each holdout row, find the nearest train row by TF-IDF cosine, and keep the 3,419 confident matches (cos > 0.3). Then check how far apart the two rows sit in relative file position.
+  - Within ±1% / ±2% / ±5% of the file: 46.9% / 61.8% / 65.6% of matches.
+  - The same check with the holdout order shuffled: 2.0% / 4.1% / 9.8%.
+- **Decision (Shay): do not use neighbour/conversation context.**
+  - Rationale: the classifier must label a single prompt, as it will in production on future data. The order effect only tells us how the split was made.
+  - The one consequence kept: since the holdout is a random row-level sample, a stratified random CV mirrors it.
+- **Teacher labels** = the labels in `train.jsonl`, produced by a strong LLM (TASK.md), not by humans. Holdout scoring uses the same teacher, so the target is agreement with the teacher.
+
+---
+
+## Step 2 — Data preparation & evaluation protocol (10:20–10:50)
+
+- **Folds:** `src/02_folds.py` → `data/folds.csv`. 5-fold StratifiedKFold, shuffled, seed 42. Each class's share per fold is within 0.02 pp of its overall share.
+- **Evaluation module** (`src/evaluation.py`), used by every model on out-of-fold predictions:
+  - Per class: precision, recall, F1, ROC-AUC and PR-AUC (one-vs-rest).
+  - Overall: confusion matrix, accuracy, macro-F1, and **min-F1**, the bar from TASK.md.
+  - **95% bootstrap CIs at holdout scale.** Each replicate draws, per class, exactly the holdout support published in TASK.md (e.g. 49 Optimize rows), so each interval shows how much the holdout score can move from sampling alone.
+- **p-values:**
+  - `p(F1≤0.8)`: one-sided bootstrap test that the class misses the bar.
+  - `p(AUC=0.5)`: Mann–Whitney U.
+  - `p(macro-F1 = chance)`: permutation test.
+  - `compare()`: model vs model, with a paired bootstrap per class and McNemar's exact test.
+- **Harness check:**
+  - A random classifier gives AUC ≈ 0.5, `p(F1≤0.8)` = 1 for every class, and no significant AUCs.
+  - Under random predictions, 10 runs of the permutation p-value come out roughly uniform (0.005–0.99), so the test is calibrated.
+  - Results: `reports/02_folds.md`.
+
+**Next** — Step 3, model exploration (candidates proposed by Shay: code-tuned embeddings + linear/LogReg/SVM; DeBERTa-v3 fine-tune; Hugging Face search for task-related models).

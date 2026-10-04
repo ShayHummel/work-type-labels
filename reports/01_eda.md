@@ -147,7 +147,8 @@ P(same label as previous row) per class:
 | Other        |             0.706 |
 
 - Holdout position vs position of its nearest train row (relative 0–1): Spearman ρ = 0.47; for confident matches (cos > 0.3, n=3419) the median position gap is 0.011 of the file.
-- ⇒ Both files keep the original conversation order and holdout rows were sampled out of the same conversations. A holdout prompt's conversational neighbours are in train.
+- Share of confident matches whose train neighbour lies within ±1% / ±2% / ±5% of the holdout row's relative position: observed 46.9%, 61.8%, 65.6%; if holdout order were unrelated to train order (holdout shuffled, 20 runs): 2.0%, 4.1%, 9.8%.
+- ⇒ Both files keep the original order and holdout rows were sampled out of the same conversations. Many holdout prompts have conversational neighbours in train.
 
 ![alignment](figures/01_holdout_train_alignment.png)
 

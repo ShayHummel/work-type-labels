@@ -270,8 +270,18 @@ rho = pd.Series(hpos).corr(pd.Series(tpos), method="spearman")
 md(f"- Holdout position vs position of its nearest train row (relative 0–1): Spearman ρ = {rho:.2f}; "
    f"for confident matches (cos > 0.3, n={conf_m.sum()}) the median position gap is "
    f"{np.median(np.abs(tpos[conf_m] - hpos[conf_m])):.3f} of the file.")
-md("- ⇒ Both files keep the original conversation order and holdout rows were sampled out of the same "
-   "conversations. A holdout prompt's conversational neighbours are in train.")
+gap = np.abs(tpos - hpos)
+null_gaps = []
+for s in range(20):  # null: same matches, holdout row order shuffled
+    hp = RNG.permutation(len(hold)) / len(hold)
+    null_gaps.append([(np.abs(tpos - hp)[conf_m] <= w).mean() for w in (.01, .02, .05)])
+null_gaps = np.mean(null_gaps, axis=0)
+md("- Share of confident matches whose train neighbour lies within ±1% / ±2% / ±5% of the holdout row's "
+   f"relative position: observed {', '.join(f'{(gap[conf_m] <= w).mean():.1%}' for w in (.01, .02, .05))}; "
+   f"if holdout order were unrelated to train order (holdout shuffled, 20 runs): "
+   f"{', '.join(f'{v:.1%}' for v in null_gaps)}.")
+md("- ⇒ Both files keep the original order and holdout rows were sampled out of the same "
+   "conversations. Many holdout prompts have conversational neighbours in train.")
 md()
 fig, ax = plt.subplots(figsize=(5, 5))
 ax.scatter(hpos[conf_m], tpos[conf_m], s=2, alpha=.4)
