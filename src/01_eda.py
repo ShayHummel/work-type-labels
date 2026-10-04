@@ -294,6 +294,21 @@ fig.savefig(FIGS / "01_holdout_train_alignment.png", dpi=120)
 plt.close(fig)
 md("![alignment](figures/01_holdout_train_alignment.png)")
 md()
+on_diag = conf_m & (gap <= 0.02)
+off_diag = conf_m & ~on_diag
+md("How to read the plot: each dot is one holdout row (x = its relative position in holdout.jsonl) paired "
+   "with its most similar train row by TF-IDF cosine (y = that row's relative position in train.jsonl); "
+   "only matches with cosine > 0.3 are drawn. If the two files were ordered independently, the dots would "
+   "fill the square uniformly.")
+md()
+md(f"- **Diagonal** (|y − x| ≤ 0.02): {on_diag.sum()} rows, median cosine {np.median(sim_ho[on_diag]):.2f}. "
+   "The most similar train prompt sits at the same place in the file — a turn from the same conversation.")
+md(f"- **Background scatter**: {off_diag.sum()} rows, median cosine {np.median(sim_ho[off_diag]):.2f}. "
+   "Mostly short, generic prompts (\"what about …?\", \"explain …\") that match a similar generic prompt "
+   "anywhere in train; their position carries no information.")
+md("- Faint horizontal bands are single generic train prompts that are the nearest neighbour of many holdout "
+   "rows (e.g. `What is ^latest_version ?` for 17 of them).")
+md()
 md("Sample of consecutive train rows (id, label, text start):")
 md()
 start = 200
@@ -340,8 +355,50 @@ for pat in [r"I will provide you with a passage", r"task implement|following fea
     md(f"- `{pat}`: {len(s)} rows → {s.label.value_counts().to_dict()}")
 md()
 
-# ---------------------------------------------------------------- 7. samples
-md("## 7. Random samples per class")
+# ---------------------------------------------------------------- 7. top n-grams per label
+md("## 7. Top-10 n-grams per label")
+md()
+# Words only (≥2 letters), so pasted code symbols and numbers do not dominate.
+WORD_PATTERN = r"(?u)\b[^\W\d_][^\W\d_]+\b"
+NGRAMS = [(1, "unigram"), (2, "bi-gram"), (3, "tri-gram")]
+label_order = train.label.value_counts().index
+
+
+def top_terms_within_class(texts: pd.Series, n: int, k: int = 10) -> str:
+    vec = TfidfVectorizer(ngram_range=(n, n), stop_words="english", token_pattern=WORD_PATTERN,
+                          sublinear_tf=True, min_df=2)
+    X = vec.fit_transform(texts)
+    return ", ".join(vec.get_feature_names_out()[np.argsort(-np.asarray(X.mean(axis=0)).ravel())[:k]])
+
+
+rows = [{"label": lab, **{f"top-10 {name}": top_terms_within_class(train.text[train.label == lab], n)
+                          for n, name in NGRAMS}} for lab in label_order]
+md("### 7a. Separate TF-IDF vectorizer per label, ranked by mean weight, stop words removed")
+md()
+md("The IDF is computed inside the label, so words frequent in every label (code, use, make) still rank high.")
+md()
+md(pd.DataFrame(rows).to_markdown(index=False))
+md()
+
+rows = []
+for n, name in NGRAMS:
+    vec = TfidfVectorizer(ngram_range=(n, n), stop_words="english", token_pattern=WORD_PATTERN,
+                          sublinear_tf=True, min_df=3)
+    X = vec.fit_transform(train.text)
+    terms = vec.get_feature_names_out()
+    for lab in label_order:
+        m = (train.label == lab).values
+        score = np.asarray(X[m].mean(axis=0)).ravel() - np.asarray(X[~m].mean(axis=0)).ravel()
+        rows.append({"label": lab, "n": name, "terms": ", ".join(terms[np.argsort(-score)[:10]])})
+distinct = pd.DataFrame(rows).pivot(index="label", columns="n", values="terms").reindex(label_order)
+distinct = distinct[[name for _, name in NGRAMS]].add_prefix("top-10 ").reset_index()
+md("### 7b. Distinctive n-grams — one vectorizer on all of train, ranked by mean weight in label − rest")
+md()
+md(distinct.to_markdown(index=False))
+md()
+
+# ---------------------------------------------------------------- 8. samples
+md("## 8. Random samples per class")
 md()
 for lab in LABELS:
     md(f"### {lab}")

@@ -29,7 +29,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import binomtest, mannwhitneyu
-from sklearn.metrics import average_precision_score, confusion_matrix, roc_auc_score
+from sklearn.metrics import (average_precision_score, confusion_matrix, precision_recall_curve, roc_auc_score,
+                             roc_curve)
 
 LABELS = ["Bug fix", "Feature dev", "Refactoring", "Architecting", "Researching",
           "Testing", "Review", "Optimize", "Setup", "Other"]
@@ -127,6 +128,9 @@ def evaluate(y_true, y_pred, proba: np.ndarray | None = None, n_boot: int = 1000
         "p-value": [np.nan, (1 + np.sum(np.array(perm_macro) >= macro)) / (n_perm + 1),
                     (bf.min(1) <= BAR).mean(), np.nan],
     }, index=["accuracy", "macro-F1", "min-F1 (bar)", "classes with F1 ≥ 0.8"])
+    if proba is not None:
+        overall.loc["macro ROC-AUC"] = [per["ROC-AUC"].mean(), np.nan, np.nan, np.nan]
+        overall.loc["macro PR-AUC"] = [per["PR-AUC"].mean(), np.nan, np.nan, np.nan]
     return {"per_class": per, "overall": overall, "cm": cm, "boot_f1": bf}
 
 
@@ -174,20 +178,51 @@ def plot_confusion(cm: np.ndarray, path: Path, title: str) -> None:
     plt.close(fig)
 
 
-def to_markdown(res: dict, name: str, fig_rel: str | None = None) -> str:
+def plot_curves(y_true, proba: np.ndarray, path: Path, title: str) -> None:
+    """One-vs-rest ROC and precision–recall curves, one line per class."""
+    y = to_ids(y_true)
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 5.5))
+    cmap = plt.get_cmap("tab10")
+    for c, lab in enumerate(LABELS):
+        yc, sc = (y == c).astype(int), proba[:, c]
+        fpr, tpr, _ = roc_curve(yc, sc)
+        pr, rc, _ = precision_recall_curve(yc, sc)
+        a1.plot(fpr, tpr, color=cmap(c), lw=1.2, label=f"{lab} ({roc_auc_score(yc, sc):.3f})")
+        a2.plot(rc, pr, color=cmap(c), lw=1.2, label=f"{lab} ({average_precision_score(yc, sc):.3f})")
+    a1.plot([0, 1], [0, 1], "k--", lw=.8)
+    a1.set(xlabel="false positive rate", ylabel="true positive rate", title="ROC (one-vs-rest), AUC in legend")
+    a2.set(xlabel="recall", ylabel="precision", title="Precision–recall (one-vs-rest), AP in legend")
+    a2.axhline(BAR, color="grey", ls=":", lw=.8)
+    a2.axvline(BAR, color="grey", ls=":", lw=.8)
+    for ax in (a1, a2):
+        ax.legend(fontsize=7, loc="lower right" if ax is a1 else "upper right")
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+
+
+def to_markdown(res: dict, name: str, cm_fig: str | None = None, curves_fig: str | None = None) -> str:
     per = res["per_class"]
-    cols = ["support (OOF)", "precision", "recall", "F1"]
-    show = per[cols].copy()
-    show["P 95% CI"] = per.apply(lambda r: f"{r['P lo']:.3f}–{r['P hi']:.3f}", axis=1)
-    show["R 95% CI"] = per.apply(lambda r: f"{r['R lo']:.3f}–{r['R hi']:.3f}", axis=1)
-    show["F1 95% CI"] = per.apply(lambda r: f"{r['F1 lo']:.3f}–{r['F1 hi']:.3f}", axis=1)
-    show["p(F1≤0.8)"] = per["p(F1≤0.8)"]
+    thr = per[["support (OOF)", "precision", "recall", "F1"]].copy()
+    thr["P 95% CI"] = per.apply(lambda r: f"{r['P lo']:.3f}–{r['P hi']:.3f}", axis=1)
+    thr["R 95% CI"] = per.apply(lambda r: f"{r['R lo']:.3f}–{r['R hi']:.3f}", axis=1)
+    thr["F1 95% CI"] = per.apply(lambda r: f"{r['F1 lo']:.3f}–{r['F1 hi']:.3f}", axis=1)
+    thr["p(F1≤0.8)"] = per["p(F1≤0.8)"]
+    lines = [f"### {name}", "", "**Threshold metrics (argmax prediction)**", "", thr.to_markdown(floatfmt=".3f"), ""]
     if "ROC-AUC" in per:
-        show["ROC-AUC (CI)"] = per.apply(lambda r: f"{r['ROC-AUC']:.3f} ({r['ROC lo']:.3f}–{r['ROC hi']:.3f})", 1)
-        show["p(AUC=0.5)"] = per["p(AUC=0.5)"].map(lambda v: f"{v:.1e}")
-        show["PR-AUC (CI)"] = per.apply(lambda r: f"{r['PR-AUC']:.3f} ({r['PR lo']:.3f}–{r['PR hi']:.3f})", 1)
-        show["PR chance"] = per["PR chance"]
-    lines = [f"### {name}", "", show.to_markdown(floatfmt=".3f"), "", res["overall"].to_markdown(floatfmt=".3f"), ""]
-    if fig_rel:
-        lines += [f"![confusion]({fig_rel})", ""]
+        rank = pd.DataFrame({
+            "ROC-AUC": per["ROC-AUC"],
+            "ROC-AUC 95% CI": per.apply(lambda r: f"{r['ROC lo']:.3f}–{r['ROC hi']:.3f}", axis=1),
+            "p(AUC=0.5)": per["p(AUC=0.5)"].map(lambda v: f"{v:.1e}"),
+            "PR-AUC (AP)": per["PR-AUC"],
+            "PR-AUC 95% CI": per.apply(lambda r: f"{r['PR lo']:.3f}–{r['PR hi']:.3f}", axis=1),
+            "PR-AUC chance (=prevalence)": per["PR chance"],
+        })
+        lines += ["**Ranking metrics (class scores, one-vs-rest)**", "", rank.to_markdown(floatfmt=".3f"), ""]
+    lines += ["**Overall**", "", res["overall"].to_markdown(floatfmt=".3f"), ""]
+    if cm_fig:
+        lines += [f"![confusion matrix]({cm_fig})", ""]
+    if curves_fig:
+        lines += [f"![ROC and PR curves]({curves_fig})", ""]
     return "\n".join(lines)

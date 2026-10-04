@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 
-from evaluation import LABELS, evaluate, plot_confusion, to_markdown
+from evaluation import LABELS, evaluate, plot_confusion, plot_curves, to_markdown
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = 42
@@ -46,8 +46,10 @@ proba = rng.dirichlet(prior * 50, size=len(train))
 pred = np.array(LABELS)[proba.argmax(1)]
 res = evaluate(train.label, pred, proba)
 plot_confusion(res["cm"], ROOT / "reports" / "figures" / "02_random_baseline_cm.png", "Random (prior) baseline")
+plot_curves(train.label, proba, ROOT / "reports" / "figures" / "02_random_baseline_curves.png", "Random (prior) baseline")
 out += ["## Harness sanity check — random classifier (should show AUC≈0.5, large p-values)", "",
-        to_markdown(res, "Random baseline", "figures/02_random_baseline_cm.png")]
+        to_markdown(res, "Random baseline", "figures/02_random_baseline_cm.png",
+                    "figures/02_random_baseline_curves.png")]
 
 (ROOT / "reports" / "02_folds.md").write_text("\n".join(out))
 print("\n".join(out))

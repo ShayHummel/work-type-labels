@@ -95,4 +95,12 @@ Script: `src/01_eda.py` → `reports/01_eda.md` + `reports/figures/01_*.png`.
 - **Revision (Shay's review):** the first version scaled the bootstrap to the per-class "Support" column printed in TASK.md. That column presumably counts the holdout's teacher labels, but TASK.md does not say so explicitly, and those labels are noisy anyway. The bootstrap now uses train proportions × 6,199, and the evaluation depends on `train.jsonl` only. The TASK.md column is shown in the EDA as unverified context and is not used anywhere else.
 - **Reminder on label quality:** all scores, ours and Zuzai's, measure agreement with the teacher LLM, not correctness. Disagreement between the teacher's labels on near-identical text (EDA §4) caps what any model can reach. The note will separate model errors from these collisions.
 
+- **Revision (Shay's review, 2):**
+  - The per-label top-10 n-gram tables moved into the EDA report as §7 (7a: separate vectorizer per label, as requested; 7b: distinctive, label vs rest). The standalone `01b` script was removed.
+  - EDA §5 now explains how to read the alignment plot:
+    - **Diagonal** (|Δpos| ≤ 0.02): 2,114 rows, median cosine 0.55. The nearest train row is a turn of the same conversation.
+    - **Background scatter**: 1,305 rows, median cosine 0.41. Generic short prompts matched to a similar prompt anywhere.
+    - **Horizontal bands**: single generic train prompts that are nearest for many holdout rows.
+  - ROC-AUC and PR-AUC now have their own table ("Ranking metrics"): value, 95% CI, Mann–Whitney p, and PR chance level. Macro ROC-AUC and macro PR-AUC are in the overall table, and per-class ROC and PR curves are plotted (`plot_curves`).
+
 **Next** — Step 3, model exploration (candidates proposed by Shay: code-tuned embeddings + linear/LogReg/SVM; DeBERTa-v3 fine-tune; Hugging Face search for task-related models).
