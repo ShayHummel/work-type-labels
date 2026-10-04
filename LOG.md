@@ -143,3 +143,24 @@ Script: `src/01_eda.py` → `reports/01_eda.md` + `reports/figures/01_*.png`.
 - `src/import_colab.py` now also validates fine-tune zips: fold rows match `data/folds.csv`, shapes, finite values, and it flags smoke-test runs.
 - Smoke test passed locally (deberta-v3-xsmall, 400 rows, 12 steps, MPS): files written, zip exported, import validated. Resume after a lost GPU relies on HF Trainer's `resume_from_checkpoint` and was not tested end-to-end here.
 - Block 1 started in the background (`src/04_tfidf_baselines.py`, shared runner `src/experiments.py`, which writes OOF scores, holdout scores and `reports/results.csv`).
+
+---
+
+## Block 1 — TF-IDF baselines (11:45–12:14)
+
+Script `src/04_tfidf_baselines.py`. Results: `reports/results.csv` and `reports/exp/tfidf-*.md`, with confusion matrices and ROC/PR curves in `reports/figures/exp/`.
+Hyper-parameters were chosen on fold 0, then all 5 folds were run. The vectorizers are fitted inside each training split.
+
+| Features | Ridge (macro / min F1) | LogReg | LinearSVC |
+|---|---|---|---|
+| Words 1–3 | 0.516 / 0.234 | 0.531 / 0.207 | 0.520 / 0.222 |
+| Chars 3–5 | 0.509 / 0.242 | 0.536 / 0.264 | 0.526 / 0.247 |
+| Words + chars | 0.549 / 0.254 | **0.558 / 0.267** | 0.551 / 0.280 |
+
+- **Best: words+chars LogReg.** Accuracy 0.667, macro ROC-AUC 0.923, macro PR-AUC 0.586. Every grid selected `class_weight=balanced`.
+- **Words+chars vs words only:** +0.027 macro-F1 (95% CI 0.013–0.040, paired bootstrap p < 0.001; McNemar p ≈ 1e-34).
+- **LogReg vs SVM on words+chars:** not significant (Δ macro-F1 CI −0.006 to 0.019, p = 0.13).
+- **Per class (best model):** Other 0.78, Bug fix 0.71, Feature dev 0.68, Testing 0.67, Researching 0.65, Setup 0.58, Refactoring 0.45, Architecting 0.44, Review 0.35, Optimize 0.27 (holdout-scale CI 0.11–0.43). `p(F1≤0.8)` is 1.00 for every class.
+- **Conclusion:** this matches Zuzai's fastText (about 0.50) and confirms the bag-of-words ceiling of about 0.55 macro-F1. The weak classes (Review, Optimize, Architecting, Refactoring) are the same ones that were weak for DistilBERT.
+- **Local embeddings finished** (`data/emb/`): BGE-M3 4 min, Qwen3-0.6B 19 min, Qwen3-0.6B with instruction 21 min. A quick fold-0 check of BGE-M3 + LogReg gives macro 0.567 / min 0.308.
+- **Colab (T4):** Qwen3-Embedding-8B is skipped (needs about 17 GB); the 4B runs at about 3.6 min per 2,000-row chunk, about 58 min in total. Fixed both scripts to use fp16 on GPUs without native bf16.
