@@ -320,3 +320,27 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 - A 0.6B model fine-tuned with LoRA matches the 8B embedding model. It is the strongest single model on Review and Optimize, and adding it to the stack gives about +0.02 macro-F1 and +0.09 min-F1 on fold 0.
   - Single fold, so the CIs are wide.
   - Training loss reached about 0.13–0.2 by epoch 3 (memorisation), so 2 epochs may do as well at two-thirds of the cost.
+
+---
+
+## Block 6/7 — Qwen3-0.6B + LoRA, all 5 folds, and stacking (22:00)
+
+- Colab finished folds 1–4 with the fixed code. Fold 1 resumed from a checkpoint left by the stopped run; training is unchanged between versions.
+  - Per fold macro / min F1: 0.729 / 0.571 (fold 0, repaired), 0.714 / 0.594, 0.719 / 0.542, 0.732 / 0.602, 0.735 / 0.594. About 22–33 min per fold on an A100.
+- `src/08_collect_ft.py` assembles the folds into OOF scores, with the holdout as the mean of the 5 fold models, and registers the result as `ft-qwen3-0.6b-lora`.
+  - It refuses folds whose prediction order is not verified.
+
+| Model | macro-F1 | min-F1 | accuracy | classes ≥ 0.8 |
+|---|---|---|---|---|
+| ft-qwen3-0.6b-lora (single model) | 0.726 | **0.603** | 0.798 | 3 |
+| stack-C (no fine-tune) | 0.750 | 0.584 | 0.822 | 4 |
+| **stack-E** = stack-C bases + LoRA | **0.766** | **0.635** | **0.833** | 4 |
+| stack-F = Qwen3-8B-instr LR + LoRA | 0.764 | 0.624 | 0.831 | 5 |
+
+- **Stack-E vs stack-C:** macro-F1 +0.016 (95% CI 0.004–0.028, p = 0.004); McNemar p ≈ 3e-13.
+  - Significant per-class gains: Review +0.051 (p = 0.02), Architecting +0.030 (p = 0.02), Feature dev, Researching.
+  - Optimize and Testing do not move.
+- **Stack-E per class, with 95% CI at holdout scale:**
+  - Other 0.895, Bug fix 0.866 (0.849–0.881), Feature dev 0.838, Researching 0.830, Testing 0.799 (0.741–0.853), Setup 0.762 (0.725–0.799), Refactoring 0.719 (0.674–0.766), Architecting 0.670 (0.623–0.718), Optimize 0.648 (0.515–0.767), Review 0.635 (0.577–0.693).
+  - Overall: macro-F1 0.766 (0.749–0.785), min-F1 0.635 (0.515–0.670).
+- **The class bias again lowers both metrics** when cross-fitted (stack-E+bias 0.754 / 0.627), so it is not used.
