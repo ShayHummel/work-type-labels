@@ -261,4 +261,4 @@ Script `src/05_embedding_models.py`, same protocol as block 1. A bug in the grid
 - **Fix:** new `--ckpt-root` option. On Colab, checkpoints now go to the VM disk (`/content/ckpt`), and only the results (≈ 0.5 MB per fold) go to Drive.
   - Trade-off: if the VM itself is replaced, the running fold restarts (≈ 7–15 min on A100) instead of resuming.
 - **Notebook:** a cleanup cell removes embedding chunks and old checkpoint folders from Drive (the Drive trash must be emptied by hand).
-- **Jobs (Shay: fine-tune in parallel with the error analysis):** DeBERTa-v3-base folds 0–4, then Qwen3-0.6B + LoRA folds 0–4.
+- **Jobs (Shay: fine-tune in parallel with the error analysis; Qwen + LoRA only, expected to be more efficient than DeBERTa):** Qwen3-0.6B + LoRA folds 0–4.
