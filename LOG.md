@@ -203,3 +203,29 @@ Script `src/05_embedding_models.py`, same protocol as block 1. A bug in the grid
   - **Fix:** `last_complete_checkpoint()` resumes from the newest checkpoint that has trainer state, optimizer, scheduler and RNG files, and deletes partial folders.
   - **Retest:** the rerun resumed from checkpoint-5 and finished the fold.
 - **Colab:** Qwen3-Embedding-8B is running on an A100 (40 GB) at about 40 s per 2,000-row chunk, so about 11 min per 8B model.
+
+---
+
+## Block 5 — Large embeddings from Colab × linear models / kNN (15:25–16:10)
+
+- **Colab outputs** (Qwen3-Embedding-8B with and without instruction, 4B, nomic-embed-code; A100) were copied by Shay into `data/emb/`. Validated with `src/import_colab.py --check-emb`: ids hash, shapes, finite values, unit norm, no collapsed rows. All OK.
+- **Runs crashed three times.** The causes were memory pressure and a native segfault of Ridge on > 1024-d float32 inside joblib/loky workers; the same fits run fine in-process.
+  - Fixes: experiments that are already done are skipped; 2 workers for large embeddings; Ridge and kNN run sequentially on > 1024-d (seconds each).
+- Early fusion was skipped (too slow, see block 2). Late fusion is in block 7.
+
+| Embedding (dim) | LogReg | SVM | Ridge | kNN |
+|---|---|---|---|---|
+| **Qwen3-8B + instruction (4096)** | **0.740 / 0.573** | 0.742 / 0.555 | 0.697 / 0.518 | 0.677 / 0.446 |
+| Qwen3-8B (4096) | 0.670 / 0.417 | 0.670 / 0.448 | 0.638 / 0.408 | 0.538 / 0.264 |
+| Qwen3-4B (2560) | 0.639 / 0.409 | 0.655 / 0.424 | 0.623 / 0.392 | 0.523 / 0.269 |
+| nomic-embed-code (3584) | 0.645 / 0.421 | 0.623 / 0.396 | 0.610 / 0.343 | 0.506 / 0.269 |
+
+(macro-F1 / min-F1, 5-fold OOF)
+
+- **Best single model: Qwen3-8B-instr + LogReg.**
+  - Accuracy 0.810, macro ROC-AUC 0.976. CI at holdout scale: macro-F1 0.722–0.759, min-F1 0.505–0.620.
+  - 4 classes are ≥ 0.8: Other 0.88, Bug fix 0.85, Feature dev 0.81, Researching 0.81. Testing is at 0.796.
+  - Below the bar: Setup 0.75, Refactoring 0.68, Optimize 0.64, Architecting 0.63, Review 0.57.
+- **The task instruction is the biggest single lever at 8B:** +0.07 macro-F1 and +0.16 min-F1 over the same model without it. At 0.6B the gain was small.
+- **4B was only embedded without the instruction**, so a 4B-instr run is a missing comparison (about 6 min on an A100).
+- **nomic-embed-code** (a code-retrieval model) is no better than general-purpose Qwen3-4B, as expected for an intent task.

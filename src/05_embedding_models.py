@@ -3,7 +3,7 @@
 Embeddings come from data/emb/<key>/ (src/embed.py, locally or imported from Colab). Same protocol as block 1:
 hyper-parameters chosen on fold 0 (min-F1, then macro-F1), then 5-fold OOF + a full-train fit for the holdout.
 
-Run: uv run python src/05_embedding_models.py [emb keys …]   (default: every key in data/emb/)
+Run: uv run python src/05_embedding_models.py [emb keys …] [--no-fusion]   (default: every key in data/emb/)
 """
 
 import sys
@@ -62,17 +62,28 @@ def fusion_fit_predict(E_train, E_hold):
 if __name__ == "__main__":
     train, hold = load_data()
     hold.attrs["holdout"] = True
-    keys = sys.argv[1:] or sorted(p.name for p in (DATA / "emb").iterdir() if (p / "manifest.json").exists())
+    no_fusion = "--no-fusion" in sys.argv  # early fusion is slow (block 2: up to 90 min); late fusion in block 7
+    keys = [a for a in sys.argv[1:] if not a.startswith("--")] or sorted(p.name for p in (DATA / "emb").iterdir() if (p / "manifest.json").exists())
     for key in keys:
         E_train = np.load(DATA / "emb" / key / "train.npy").astype(np.float32)
         E_hold = np.load(DATA / "emb" / key / "holdout.npy").astype(np.float32)
+        # each worker holds a copy of the matrix: 4096-d × 24.8k rows ≈ 0.4 GB → fewer workers for big models
+        n_jobs = 6 if E_train.shape[1] <= 1024 else 2
         for model in ("lr", "svm", "ridge", "knn"):
             exp = f"emb-{key}_{model}"
+            if (DATA / "oof" / f"{exp}.npy").exists() and "--redo" not in sys.argv:
+                print(exp, "already done — skipping", flush=True)
+                continue
             fp = emb_fit_predict(E_train, E_hold, model)
-            best, grid = select_on_fold0(train, fp, MODELS[model][1])
+            # Ridge/kNN on >1024-d float32 segfault inside loky workers (fine in-process); they take seconds anyway
+            jobs = 1 if (model in ("ridge", "knn") and E_train.shape[1] > 1024) else n_jobs
+            best, grid = select_on_fold0(train, fp, MODELS[model][1], n_jobs=jobs)
             print(exp, "fold-0 grid:\n", grid.round(3).to_string(index=False), flush=True)
-            run_cv(exp, train, hold, fp, best, {"block": 2, "features": f"emb-{key}", "model": model,
-                                                 "selection": "fold-0 grid, min-F1 then macro-F1"})
+            run_cv(exp, train, hold, fp, best, {"block": 2 if E_train.shape[1] <= 1024 else 5, "features": f"emb-{key}", "model": model,
+                                                 "selection": "fold-0 grid, min-F1 then macro-F1"},
+                   n_jobs=min(jobs, 5))
+        if no_fusion:
+            continue
         exp = f"fusion-tfidfWC+{key}_lr"
         fp = fusion_fit_predict(E_train, E_hold)
         best, grid = select_on_fold0(train, fp, FUSION_GRID, n_jobs=4)

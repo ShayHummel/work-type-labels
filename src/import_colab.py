@@ -3,6 +3,7 @@
 Handles embedding zips (emb_<key>.zip → data/emb/<key>/) and fine-tuning zips (ft_<key>.zip → data/ft/<key>/fold*/).
 
 Usage: uv run python src/import_colab.py ~/Downloads/emb_qwen3-8b.zip [more.zip …]
+       uv run python src/import_colab.py --check-emb      # validate data/emb/* in place
 """
 
 import hashlib
@@ -66,5 +67,37 @@ def main(paths: list[str]) -> None:
             print(f"{p} → {d.relative_to(ROOT)}  [{man.get('model_id', '?')}, dim {man.get('dim', '?')}]  {status}")
 
 
+def check_emb_dirs() -> None:
+    """Validate every data/emb/<key>/ already in place (e.g. copied by hand instead of imported)."""
+    sha = local_ids_sha1()
+    n_train = sum(1 for _ in open(ROOT / "train.jsonl"))
+    n_hold = sum(1 for _ in open(ROOT / "holdout.jsonl"))
+    for d in sorted((ROOT / "data" / "emb").iterdir()):
+        problems = []
+        if not (d / "manifest.json").exists():
+            print(f"{d.name}: PROBLEM: no manifest.json")
+            continue
+        man = json.loads((d / "manifest.json").read_text())
+        if man.get("ids_sha1") != sha:
+            problems.append("ids hash differs from local jsonl")
+        tr, ho = np.load(d / "train.npy"), np.load(d / "holdout.npy")
+        if tr.shape != (n_train, man["dim"]) or ho.shape != (n_hold, man["dim"]):
+            problems.append(f"shape {tr.shape} {ho.shape}, expected ({n_train}, {man['dim']}) ({n_hold}, {man['dim']})")
+        t32 = tr.astype(np.float32)
+        if not (np.isfinite(t32).all() and np.isfinite(ho.astype(np.float32)).all()):
+            problems.append("non-finite values")
+        norms = np.linalg.norm(t32, axis=1)
+        if not np.allclose(norms, 1, atol=1e-2):
+            problems.append(f"not L2-normalised (norm range {norms.min():.3f}–{norms.max():.3f})")
+        if np.unique(t32[:2000].round(4), axis=0).shape[0] < 1990:
+            problems.append("many identical rows (collapsed embeddings?)")
+        print(f"{d.name:18s} {man['model_id']:30s} dim {man['dim']:5d}  prompt={'yes' if man.get('prompt') else 'no '}  "
+              f"max_len {man.get('max_len')}  {man.get('device', '')[:28]:28s}  "
+              + ("OK" if not problems else "PROBLEM: " + "; ".join(problems)))
+
+
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    if sys.argv[1:] == ["--check-emb"]:
+        check_emb_dirs()
+    else:
+        main(sys.argv[1:])
