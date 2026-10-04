@@ -44,8 +44,8 @@ def select_on_fold0(train: pd.DataFrame, fit_predict, grid: list[dict], n_jobs: 
         return {**params, "min_F1": f1.min(), "macro_F1": f1.mean()}
 
     res = pd.DataFrame(Parallel(n_jobs=n_jobs)(delayed(one)(p) for p in grid))
-    best = res.sort_values(["min_F1", "macro_F1"], ascending=False).iloc[0]
-    return {k: best[k] for k in grid[0]}, res
+    best_i = res.sort_values(["min_F1", "macro_F1"], ascending=False).index[0]
+    return dict(grid[best_i]), res  # from the grid itself: pandas would turn None into NaN
 
 
 def run_cv(exp_id: str, train: pd.DataFrame, hold: pd.DataFrame, fit_predict, params: dict,

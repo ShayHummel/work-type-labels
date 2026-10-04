@@ -171,3 +171,24 @@ Hyper-parameters were chosen on fold 0, then all 5 folds were run. The vectorize
   - No Drive-queue worker for Colab; the notebooks stay manual.
   - Wait for the Colab results (Qwen3-4B embeddings, then fine-tuning) before continuing.
   - The 9-hour budget is Shay's working time; about 2–3 hours used so far on 2026-10-04.
+
+---
+
+## Block 2 — Embeddings × linear models / kNN, and TF-IDF fusion (12:30–14:50)
+
+Script `src/05_embedding_models.py`, same protocol as block 1. A bug in the grid selection (pandas turned `class_weight=None` into NaN) crashed the first run; it was fixed in `select_on_fold0` and the block rerun. Block 1 was unaffected, since all its grids chose `balanced`.
+
+| Features | LogReg | SVM | Ridge | kNN | Fusion with TF-IDF words+chars (LogReg) |
+|---|---|---|---|---|---|
+| BGE-M3 | 0.546 / 0.302 | 0.540 / 0.294 | 0.501 / 0.223 | 0.506 / 0.268 | 0.611 / 0.374 |
+| Qwen3-Emb-0.6B | 0.576 / 0.323 | 0.596 / 0.288 | 0.545 / 0.278 | 0.496 / 0.247 | 0.639 / 0.391 |
+| Qwen3-Emb-0.6B + instruction | 0.587 / 0.361 | 0.602 / 0.368 | 0.548 / 0.262 | 0.505 / 0.269 | **0.640 / 0.410** |
+
+(macro-F1 / min-F1, 5-fold OOF)
+
+- **Best: TF-IDF words+chars ⊕ Qwen3-0.6B-instr, LogReg.** Accuracy 0.743, macro ROC-AUC 0.957, macro PR-AUC 0.701. It beats Zuzai's DistilBERT (0.603 macro).
+  - Per class: Other 0.85, Bug fix 0.77, Feature dev 0.74, Researching 0.73, Testing 0.71, Setup 0.66, Refactoring 0.53, Architecting 0.51, Optimize 0.48, Review 0.41.
+- **Fusion vs best TF-IDF:** +0.08 macro-F1 (95% CI 0.063–0.105, p < 0.001).
+- **The instruction prompt** helps the embedding alone (LogReg min-F1 0.32 → 0.36, SVM 0.29 → 0.37). Inside the fusion it makes no significant macro-F1 difference (Δ CI −0.018 to 0.020, p = 0.42).
+- **kNN is the weakest**: neighbours often carry different teacher labels, consistent with the EDA noise finding.
+- **Runtime issue:** early fusion (sparse TF-IDF plus a dense block in one LogReg) is slow. CV took 2.5 min for BGE, 22 min for Qwen, and 90 min for Qwen-instr (no class weights, slow lbfgs convergence). For later fusions (e.g. Qwen3-4B), use **late fusion** (stack the OOF probabilities of the separate models) instead. It is much cheaper and needs no refit.
