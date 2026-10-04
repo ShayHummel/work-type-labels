@@ -307,3 +307,16 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 - **Recovery without retraining:** `src/fix_ft_order.py` rebuilds the deterministic sampler order (same tokenisation, eval batch size, seed 42) and inverts it. It only writes if the repaired order scores clearly above chance.
 - **Second, smaller bug:** head+tail truncation broke when max_len < 2 × 128 tail tokens (local smoke tests only; Colab used 512). Fixed.
 - Shay stopped the Colab run during fold 1 (old code).
+
+### Qwen3-0.6B + LoRA fold 0: repaired and evaluated (19:00)
+
+- `fix_ft_order.py` rebuilt the Colab prediction order locally, so it is reproducible across torch versions. Fold 0 went from macro-F1 0.099 (shuffled) to **0.729, min-F1 0.571, accuracy 0.801**.
+- Comparison on the same rows (fold 0, n = 4,959, macro / min F1):
+  - stack-C 0.743 / 0.500
+  - Qwen3-8B-instr embedding + LR 0.733 / 0.566
+  - **Qwen3-0.6B + LoRA 0.729 / 0.571**
+  - stack-C + LoRA (meta-LR, inner 5-fold CV within fold 0) 0.763 / 0.586
+  - average of stack-C and LoRA probabilities 0.758 / 0.596
+- A 0.6B model fine-tuned with LoRA matches the 8B embedding model. It is the strongest single model on Review and Optimize, and adding it to the stack gives about +0.02 macro-F1 and +0.09 min-F1 on fold 0.
+  - Single fold, so the CIs are wide.
+  - Training loss reached about 0.13–0.2 by epoch 3 (memorisation), so 2 epochs may do as well at two-thirds of the cost.
