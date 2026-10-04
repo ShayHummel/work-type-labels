@@ -5,3 +5,6 @@ models/
 *.pt
 *.safetensors
 .idea/
+data/emb/
+data/oof/
+data/holdout_scores/

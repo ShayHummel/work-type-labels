@@ -104,3 +104,13 @@ Script: `src/01_eda.py` → `reports/01_eda.md` + `reports/figures/01_*.png`.
   - ROC-AUC and PR-AUC now have their own table ("Ranking metrics"): value, 95% CI, Mann–Whitney p, and PR chance level. Macro ROC-AUC and macro PR-AUC are in the overall table, and per-class ROC and PR curves are plotted (`plot_curves`).
 
 **Next** — Step 3, model exploration (candidates proposed by Shay: code-tuned embeddings + linear/LogReg/SVM; DeBERTa-v3 fine-tune; Hugging Face search for task-related models).
+
+---
+
+## Step 3 — Experiment planning (10:50–11:15)
+
+- Benchmarked embedding runtime on this Mac (`src/03_embed_benchmark.py` → `reports/03_embed_benchmark.md`). BGE-M3: 3 min for all 30,991 prompts. Qwen3-Embedding-0.6B: 9 min. 4B / 7B / 8B models: ≥ 1–2 h each locally, so they go to Colab.
+- Added JEV (typed-decision classifiers: open-jev-deberta-v3-large, simple-jev) to the candidates at Shay's request.
+- Wrote `PLAN.md`: features, models, evaluation protocol, decision layer, noise analysis, runtime policy, timed experiment queue and open decisions.
+
+**Next** — review of PLAN.md with Shay.
