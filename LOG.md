@@ -262,3 +262,29 @@ Script `src/05_embedding_models.py`, same protocol as block 1. A bug in the grid
   - Trade-off: if the VM itself is replaced, the running fold restarts (≈ 7–15 min on A100) instead of resuming.
 - **Notebook:** a cleanup cell removes embedding chunks and old checkpoint folders from Drive (the Drive trash must be emptied by hand).
 - **Jobs (Shay: fine-tune in parallel with the error analysis; Qwen + LoRA only, expected to be more efficient than DeBERTa):** Qwen3-0.6B + LoRA folds 0–4.
+
+---
+
+## Block 8 — Error analysis of stack-C (16:00–16:25)
+
+Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first run hung: cleanlab spawned worker processes, and on macOS each one re-ran the script (no `__main__` guard). Fixed with `n_jobs=1`; the analysis itself takes 4 s.
+
+1. **Confident learning (cleanlab):** 1,946 rows (7.8%) are flagged as likely label issues.
+   - The weak classes are flagged 2–4× as often as the strong ones: Review 20.2%, Optimize 18.1%, Architecting 17.5%, Refactoring 16.4%, Setup 11.7%, Testing 10.6%, against Other 4.4%, Feature dev 6.2%, Bug fix 6.6%.
+2. **Teacher self-consistency on near-duplicates** (Qwen3-8B-instr cosine ≥ 0.95, 16% of rows): the near-duplicate carries the same teacher label in 96.8% of cases for Other, 88% for Bug fix, 85% for Feature dev, but only **64–68% for Refactoring, Architecting and Review**, and 72% for Optimize.
+   - So on near-identical prompts the teacher itself disagrees about a third of the time in those classes.
+   - Label agreement with the nearest other row rises from 0.57 to 0.94 as similarity rises, but even at 0.95–0.98 cosine it is only 0.84.
+3. **Error attribution:**
+   - For the weak classes, **68–77% of false positives** (model says Review, Architecting, Optimize or Refactoring; teacher says otherwise) are on rows cleanlab flags as inconsistent.
+   - About 45% of false negatives are flagged or near-duplicate collisions; about 55% are unexplained.
+4. **F1 on rows with self-consistent labels** (8.2% excluded): every class reaches ≥ 0.80 except Review (0.76).
+   - Refactoring 0.70 → 0.85, Architecting 0.64 → 0.81, Optimize 0.65 → 0.80, Setup 0.76 → 0.87, Testing 0.79 → 0.88.
+   - This is not a holdout estimate (the holdout keeps its noisy labels). It locates the gap: most of the distance to 0.8 on the weak classes sits on rows where the teacher's labels are inconsistent.
+5. **Reading the error samples (§5 of the report) by hand:**
+   - Many errors are short follow-ups whose meaning depends on the conversation ("I meant this in the __init__ method" labelled Review; "Is there another, non-blocking way?" labelled Researching).
+   - Others are defensible either way ("would it be faster to search all tables at the same time" is Researching for the teacher, Optimize for the model; "Whats the process of updating workflows … give me database models" is Architecting vs Researching).
+   - Clear model errors exist too, e.g. "convert this code to fetch the data in parallel across regions" (teacher Optimize, model Feature dev).
+- **Conclusion for the note:** for Review, Architecting, Refactoring and Optimize, a large part of the gap to 0.8 is label collision, not model capacity. Reaching 0.8 on the holdout for those classes is unlikely for any model that sees only the prompt.
+
+### Colab: Qwen3-0.6B + LoRA failed at start
+- Colab ships torchao 0.10, and peft 0.21 refuses torchao < 0.16 when injecting LoRA layers. We do not use torchao, so the notebook now uninstalls it.
