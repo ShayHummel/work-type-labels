@@ -11,7 +11,10 @@ dependencies = [
     "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
     "seaborn>=0.13.2",
+    "sentence-transformers>=6.1.0",
     "tabulate>=0.10.0",
+    "torch>=2.14.1",
+    "transformers>=5.18.0",
 ]
 
 [tool.uv]
