@@ -5,13 +5,17 @@ description = "Classify developer prompts into ten work-type labels (Zuzai home 
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "accelerate>=1.15.0",
     "matplotlib>=3.11.2",
     "numpy>=2.5.3",
     "pandas>=3.0.6",
+    "peft>=0.21.2",
+    "protobuf>=7.36.2",
     "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
     "seaborn>=0.13.2",
     "sentence-transformers>=6.1.0",
+    "sentencepiece>=0.2.2",
     "tabulate>=0.10.0",
     "torch>=2.14.1",
     "transformers>=5.18.0",

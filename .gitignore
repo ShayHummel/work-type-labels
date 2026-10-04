@@ -10,3 +10,5 @@ data/oof/
 data/holdout_scores/
 data/logs/
 data/*.log
+data/ft/
+data/exports/

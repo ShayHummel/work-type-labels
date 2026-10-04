@@ -129,3 +129,17 @@ Script: `src/01_eda.py` → `reports/01_eda.md` + `reports/figures/01_*.png`.
 - `notebooks/colab_embeddings.ipynb`: Run all → Qwen3-Embedding-8B, 4B, nomic-embed-code, 8B with instruction. Outputs go to `My Drive/zuzai-hw/`.
 - `src/import_colab.py`: unzips the exported results into `data/` and validates them (ids hash, shapes, NaNs).
 - Started locally in the background: BGE-M3, Qwen3-0.6B, and Qwen3-0.6B with instruction (max_len 1024).
+
+### Fine-tuning tooling (11:40–12:00)
+
+- Decision (Shay): fine-tuning runs on Colab, and the results must be downloadable and kept for future comparison.
+- `src/finetune.py`: one job per (model, fold), the same code on CUDA and MPS.
+  - Weighted CE computed in fp32 on fp32 logits.
+  - Head+tail truncation (last 128 tokens kept), batches grouped by length, bf16 on A100/L4.
+  - Checkpoint to Drive every 300 steps; a rerun resumes from it and skips finished folds.
+  - Each finished fold writes `val_proba.npy`, `val_idx.npy`, `holdout_proba.npy` and `done.json` (config, device, timings, fold metrics), then re-zips all finished folds of the model to `exports/ft_<model>.zip`.
+  - Models: DeBERTa-v3 base and large, ModernBERT-large, mmBERT-base, Qwen3 0.6B and 1.7B + LoRA.
+- `notebooks/colab_finetune.ipynb`: Run all. Fold 0 of DeBERTa-v3-base, ModernBERT-large and Qwen3-0.6B-LoRA first, then DeBERTa-v3-base folds 1–4.
+- `src/import_colab.py` now also validates fine-tune zips: fold rows match `data/folds.csv`, shapes, finite values, and it flags smoke-test runs.
+- Smoke test passed locally (deberta-v3-xsmall, 400 rows, 12 steps, MPS): files written, zip exported, import validated. Resume after a lost GPU relies on HF Trainer's `resume_from_checkpoint` and was not tested end-to-end here.
+- Block 1 started in the background (`src/04_tfidf_baselines.py`, shared runner `src/experiments.py`, which writes OOF scores, holdout scores and `reports/results.csv`).
