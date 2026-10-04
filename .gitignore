@@ -4,3 +4,4 @@ __pycache__/
 models/
 *.pt
 *.safetensors
+.idea/
