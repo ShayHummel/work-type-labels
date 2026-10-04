@@ -295,3 +295,15 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
     - max length is 512 (about 90% of prompts fit whole; head+tail for the rest);
     - `expandable_segments` is set to reduce fragmentation.
   - **Verified locally:** a bf16 base with fp32 adapters under autocast runs forward and backward with checkpointing; all 393 trainable tensors get fp32 gradients. The full job passes the smoke test.
+
+### Colab Qwen3-0.6B + LoRA, fold 0: chance-level validation score → prediction-order bug (17:50–18:00)
+
+- **What we saw:** fold 0 trained normally (loss 4.4 → about 0.13 over 3 epochs, 33 min on A100), but scored val macro-F1 0.099 and accuracy 0.176. That is chance level: random agreement is Σp² ≈ 0.18 (EDA §5).
+- **Cause (my bug):** `train_sampling_strategy="group_by_length"` in transformers 5.18 is also applied by `_get_eval_sampler`, so `Trainer.predict()` returned predictions in length-grouped order, not dataset order. The model was fine; the saved rows were shuffled.
+  - The earlier smoke tests could not catch it: 12 steps on 400 rows also gives chance-level scores.
+- **Fix:**
+  - `finetune.py` predicts with its own loop: batches are length-sorted for speed and the original order is restored. `done.json` now carries `predict_order`.
+  - Verified locally: deberta-v3-xsmall, 150 steps on 1,200 rows → val accuracy 0.49 (chance 0.18).
+- **Recovery without retraining:** `src/fix_ft_order.py` rebuilds the deterministic sampler order (same tokenisation, eval batch size, seed 42) and inverts it. It only writes if the repaired order scores clearly above chance.
+- **Second, smaller bug:** head+tail truncation broke when max_len < 2 × 128 tail tokens (local smoke tests only; Colab used 512). Fixed.
+- Shay stopped the Colab run during fold 1 (old code).

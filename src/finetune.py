@@ -88,7 +88,8 @@ def encode(tok, texts: list[str], max_len: int) -> list[list[int]]:
     out = []
     for ids in tok(texts, add_special_tokens=False, truncation=False)["input_ids"]:
         if len(ids) > budget:
-            ids = ids[:budget - TAIL_TOKENS] + ids[-TAIL_TOKENS:]
+            tail = TAIL_TOKENS if budget >= 2 * TAIL_TOKENS else budget // 4  # short max_len (smoke tests) only
+            ids = ids[:budget - tail] + ids[-tail:]
         out.append(pre + ids + suf)
     return out
 
@@ -211,9 +212,23 @@ def run_fold(key: str, fold: int, args) -> None:
     t_train = time.time() - t0
 
     def proba(ds):
-        logits = trainer.predict(ds).predictions
-        logits = logits[0] if isinstance(logits, tuple) else logits
-        return torch.softmax(torch.tensor(logits, dtype=torch.float32), -1).numpy()
+        """Own prediction loop. Trainer.predict() must not be used: with train_sampling_strategy="group_by_length"
+        transformers 5.x also length-groups (= reorders) the *prediction* batches, so its outputs do not line up
+        with the dataset rows. Here batches are length-sorted for speed and the original order is restored."""
+        model = trainer.model.eval()
+        collate = DataCollatorWithPadding(tok)
+        order = np.argsort([len(e) for e in ds.enc], kind="stable")
+        out = np.zeros((len(ds), len(LABELS)), dtype=np.float32)
+        bs = cfg["bs"] * 2
+        with torch.no_grad():
+            for s in range(0, len(order), bs):
+                idx = order[s:s + bs]
+                batch = collate([{"input_ids": ds.enc[i], "attention_mask": [1] * len(ds.enc[i])} for i in idx])
+                batch = {k: v.to(model.device) for k, v in batch.items()}
+                with torch.autocast(device_type=dev, dtype=torch.bfloat16, enabled=bf16):
+                    logits = model(**batch).logits.float()
+                out[idx] = torch.softmax(logits, -1).cpu().numpy()
+        return out
 
     pv, ph = proba(ds_va), proba(ds_ho)
     f1 = f1_score(y[va_idx], pv.argmax(1), labels=range(len(LABELS)), average=None, zero_division=0)
@@ -226,7 +241,7 @@ def run_fold(key: str, fold: int, args) -> None:
             "lr": args.lr or cfg["lr"], "batch": cfg["bs"] * cfg["accum"], "class_weight": args.class_weight,
             "lora": lora, "base_dtype": str(base_dtype), "device": gpu, "bf16": bf16, "fp16": fp16,
             "train_seconds": round(t_train, 1), "total_seconds": round(time.time() - t0, 1),
-            "transformers": transformers.__version__, "limit": args.limit, "max_steps": args.max_steps,
+            "transformers": transformers.__version__, "predict_order": "own-loop-v2", "limit": args.limit, "max_steps": args.max_steps,
             "val_accuracy": float((pv.argmax(1) == y[va_idx]).mean()), "val_macro_F1": float(f1.mean()),
             "val_min_F1": float(f1.min()), "val_F1": dict(zip(LABELS, map(float, f1)))}
     (fdir / "done.json").write_text(json.dumps(done, indent=2))
