@@ -1,6 +1,6 @@
 # Experiment plan — work-type labels
 
-Status: **draft for review** (2026-10-04 11:10 IDT, 2h40m of the 9h budget used; hard stop 17:28).
+Status: **draft for review** (2026-10-04). The 9-hour budget counts Shay's working time, not wall-clock time or compute time; background runs (Colab, local jobs) do not consume it.
 Companion files: `LOG.md` (what was done), `reports/` (results), `src/` (code).
 
 ---
@@ -139,7 +139,7 @@ None vs `class_weight=balanced` vs (fine-tunes) weighted CE / focal loss (γ=2) 
 - Fine-tunes and ≥ 4B embeddings on Colab: resumable, one-click jobs (§13).
 - Every experiment logs wall-clock fit and predict time to `reports/results.csv`.
 
-## 10. Experiment queue and timeline (remaining ≈ 6h20m)
+## 10. Experiment queue
 
 | # | Block | Experiments | Where | Est. time | Gate to next |
 |---|---|---|---|---|---|
@@ -151,7 +151,7 @@ None vs `class_weight=balanced` vs (fine-tunes) weighted CE / focal loss (γ=2) 
 | 6 | Best fine-tune, 5 folds | 1–2 winners of block 4 | Colab | 1–1.5 h | — |
 | 7 | Ensemble + decision layer | Stacking, cross-fitted per-class bias, imbalance variants | Local | 45 min | Final model chosen by §1 criterion |
 | 8 | Error and noise analysis | §8 | Local | 45 min | — |
-| 9 | Deliverables | Holdout predictions (format checks: 6,199 unique ids, valid labels, all 10 labels used), `note.md`, PR | Local | 45 min | Hard stop 17:28 |
+| 9 | Deliverables | Holdout predictions (format checks: 6,199 unique ids, valid labels, all 10 labels used), `note.md`, PR | Local | 45 min | Within Shay's 9-hour budget |
 
 Checkpoints with Shay after blocks 1, 2+3, 5+6 and 7.
 

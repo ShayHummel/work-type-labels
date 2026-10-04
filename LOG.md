@@ -1,6 +1,6 @@
 # Work log — work-type labels
 
-Time budget: 9 hours, started **2026-10-04 08:28 IDT**.
+Time budget: 9 hours of Shay's working time (not wall-clock or compute time), started **2026-10-04 08:28 IDT**. Long runs on Colab or in the background do not count against it.
 Each step ends with a review checkpoint where I decide on the next phase.
 Scripts live in `src/` (numbered per phase), outputs in `reports/`.
 
@@ -164,3 +164,10 @@ Hyper-parameters were chosen on fold 0, then all 5 folds were run. The vectorize
 - **Conclusion:** this matches Zuzai's fastText (about 0.50) and confirms the bag-of-words ceiling of about 0.55 macro-F1. The weak classes (Review, Optimize, Architecting, Refactoring) are the same ones that were weak for DistilBERT.
 - **Local embeddings finished** (`data/emb/`): BGE-M3 4 min, Qwen3-0.6B 19 min, Qwen3-0.6B with instruction 21 min. A quick fold-0 check of BGE-M3 + LogReg gives macro 0.567 / min 0.308.
 - **Colab (T4):** Qwen3-Embedding-8B is skipped (needs about 17 GB); the 4B runs at about 3.6 min per 2,000-row chunk, about 58 min in total. Fixed both scripts to use fp16 on GPUs without native bf16.
+
+### Checkpoint after block 1 (12:20)
+
+- Shay's decisions:
+  - No Drive-queue worker for Colab; the notebooks stay manual.
+  - Wait for the Colab results (Qwen3-4B embeddings, then fine-tuning) before continuing.
+  - The 9-hour budget is Shay's working time; about 2–3 hours used so far on 2026-10-04.
