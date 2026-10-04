@@ -8,3 +8,5 @@ models/
 data/emb/
 data/oof/
 data/holdout_scores/
+data/logs/
+data/*.log

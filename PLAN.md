@@ -106,7 +106,7 @@ Grids are tuned by inner CV on the training part of each fold, so the OOF score 
 |---|---|---|
 | JEV-ZS | open-jev-deberta-v3-large, zero-shot | Scored on all 24,792 train rows (no training, so no fold needed). Limits: 256-token state, English only |
 | JEV-SJ | simple-jev on Qwen3.5-0.8B, zero-shot, then LoRA (RFDT) on folds | Colab; only if JEV-ZS or J-features are promising |
-| LLM | Claude Haiku 4.5, few-shot with the label table | **Pending decision** (cost, production fit, "train only on train.jsonl"). If approved: a 2,000-row stratified train sample to estimate agreement first |
+| LLM | Claude Haiku 4.5, few-shot with the label table | **In scope, lowest priority** (decision §11.2): expected to be weaker than JEV. Run only if time remains, on a 2,000-row stratified train sample first |
 
 ### 5.4 Ensemble and decision layer
 - **Stacking:** a multinomial LR meta-model on the concatenated OOF scores of the best 2–4 base models, cross-fitted on the same folds.
@@ -136,7 +136,7 @@ None vs `class_weight=balanced` vs (fine-tunes) weighted CE / focal loss (γ=2) 
 - Embeddings computed once and cached. Batches sorted by length to minimise padding. fp16 on MPS/GPU.
 - Sparse TF-IDF fitted inside each fold (no IDF leakage) and cached per fold. Linear models in parallel across folds (`joblib`, n_jobs=5).
 - Grids kept small (§5.1).
-- Fine-tunes and ≥ 4B embeddings on Colab via notebooks in `notebooks/` that read the jsonl files from the fork and write `.npy` results to download into `data/`.
+- Fine-tunes and ≥ 4B embeddings on Colab: resumable, one-click jobs (§13).
 - Every experiment logs wall-clock fit and predict time to `reports/results.csv`.
 
 ## 10. Experiment queue and timeline (remaining ≈ 6h20m)
@@ -146,7 +146,7 @@ None vs `class_weight=balanced` vs (fine-tunes) weighted CE / focal loss (γ=2) 
 | 1 | TF-IDF baselines | F-W, F-C, F-WC × RIDGE, LR, SVM | Local | 30 min | Reference table |
 | 2 | Local embeddings | E-BGE, E-Q06 (± instruction) × RIDGE, LR, SVM, KNN; COMB-early with best TF-IDF | Local | 45 min | Pick best fixed-feature model |
 | 3 | JEV zero-shot | JEV-ZS on train; J as extra features | Local | 30 min | Keep J if it adds a significant gain |
-| 4 | Colab, run in parallel with 2–3 | Notebook A: E-Q4, E-Q8, E-NC embeddings. Notebook B: FT-DEB / FT-MB / FT-QL fold 0 | Colab | 1–2 h wall | Shay runs the notebooks |
+| 4 | Colab, started as early as possible and run in parallel with 1–3 | Notebook A: E-Q4, E-Q8, E-NC embeddings. Notebook B: FT-DEB / FT-MB / FT-QL fold 0 | Colab | 1–2 h wall; resumable (§13) | Shay runs the notebooks |
 | 5 | Large embeddings | E-Q4 / E-Q8 / E-NC × LR, SVM, COMB | Local | 30 min | — |
 | 6 | Best fine-tune, 5 folds | 1–2 winners of block 4 | Colab | 1–1.5 h | — |
 | 7 | Ensemble + decision layer | Stacking, cross-fitted per-class bias, imbalance variants | Local | 45 min | Final model chosen by §1 criterion |
@@ -155,11 +155,11 @@ None vs `class_weight=balanced` vs (fine-tunes) weighted CE / focal loss (γ=2) 
 
 Checkpoints with Shay after blocks 1, 2+3, 5+6 and 7.
 
-## 11. Open decisions
+## 11. Decisions (Shay, 2026-10-04 11:20)
 
-1. Colab GPU tier (T4 / L4 / A100). This determines whether E-Q8 and DeBERTa-large are feasible.
-2. LLM classifier (Claude Haiku) in or out of scope.
-3. Acceptable inference cost for the production model (does a 7–8B embedding model qualify for the chart?).
+1. **Colab:** heavy jobs run on Colab and may take a while. The GPU can be taken away mid-run and returned later, so every job must checkpoint and resume where it stopped. Results must come back to this machine easily, and the notebooks must be one click. Design in §13.
+2. **LLM classifier (Claude Haiku):** in scope but lowest priority. Shay expects it to be weaker than JEV, so JEV comes first.
+3. **Inference cost:** a 7–8B embedding model is acceptable for the production model.
 
 ## 12. Reproducibility
 
@@ -167,3 +167,28 @@ Checkpoints with Shay after blocks 1, 2+3, 5+6 and 7.
 - `uv.lock` pins every package.
 - One numbered script per block in `src/`, plus Colab notebooks in `notebooks/`.
 - Large artefacts (embeddings, model weights) are gitignored but reproducible from the scripts.
+
+## 13. Colab execution design (resumable, one click)
+
+**Principle:** the notebooks are thin launchers. All logic lives in versioned Python scripts in `src/` that run the same way on Colab (CUDA) and on this Mac (MPS), so local and Colab results are produced by the same code.
+
+**One click.** Each notebook (`notebooks/colab_embeddings.ipynb`, `notebooks/colab_finetune.ipynb`) is run with *Runtime → Run all*. Its cells:
+1. Config: a list of jobs. Edit only if needed.
+2. Mount Google Drive.
+3. Clone or update the fork (branch `solution`) and install the pinned dependencies.
+4. Run the job script with `--out /content/drive/MyDrive/zuzai-hw`.
+5. Pack the finished results into one zip per job under `…/zuzai-hw/exports/`.
+
+**Surviving a lost GPU.** All state is written to Google Drive, never to the Colab VM disk.
+- **Embeddings:** the rows are processed in chunks of 2,000. Each chunk is written atomically (tmp file then rename) as soon as it finishes. On restart, *Run all* skips finished chunks and continues from the first missing one. A model counts as done when its `manifest.json` exists.
+- **Fine-tuning:** one job = (model, fold).
+  - A Hugging Face Trainer checkpoint is saved to Drive every N steps (only the last one is kept).
+  - On restart the job resumes from that checkpoint. A finished job writes `oof_fold{k}.npy`, `holdout_fold{k}.npy` and `done.json`, and is skipped next time.
+- **Out-of-memory:** on OOM the batch size is halved and the chunk or step retried. Models that cannot fit the GPU (e.g. 8B on a 16 GB T4) are skipped with a clear message, not a crash.
+- **Logs:** progress is logged to Drive (`…/logs/<job>.log`), including GPU type, timings and resumes, for `LOG.md`.
+
+**Bringing results here.**
+1. Download the zip(s) from `My Drive/zuzai-hw/exports/`.
+2. Run `uv run python src/import_colab.py ~/Downloads/<zip>…`.
+
+The import unpacks the zips into `data/emb/` or `data/oof/`, then validates each `manifest.json`: model id, row count, ids hash against the local jsonl files, embedding dimension, and no NaNs. It prints a summary. After that, the local experiment scripts pick the results up automatically.

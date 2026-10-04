@@ -114,3 +114,18 @@ Script: `src/01_eda.py` → `reports/01_eda.md` + `reports/figures/01_*.png`.
 - Wrote `PLAN.md`: features, models, evaluation protocol, decision layer, noise analysis, runtime policy, timed experiment queue and open decisions.
 
 **Next** — review of PLAN.md with Shay.
+
+### Step 3 follow-up — plan review and Colab tooling (11:20–11:35)
+
+- Shay's decisions are recorded in PLAN §11:
+  - Colab jobs must survive GPU loss and be one click.
+  - The Haiku classifier is in scope, lowest priority, after JEV.
+  - 7–8B embedding models are acceptable in production.
+- Colab design in PLAN §13: thin notebooks, with all logic in `src/` scripts that run identically on CUDA and MPS.
+- `src/embed.py`: resumable embedding job.
+  - Writes 2,000-row chunks atomically. A rerun skips finished chunks and models.
+  - On OOM it halves the batch size. Models too large for the GPU are skipped. A manifest records the ids hash, dimension and device, and finished models can be zipped for export.
+  - Tested by killing a run, deleting one chunk and rerunning: only the missing chunk was recomputed.
+- `notebooks/colab_embeddings.ipynb`: Run all → Qwen3-Embedding-8B, 4B, nomic-embed-code, 8B with instruction. Outputs go to `My Drive/zuzai-hw/`.
+- `src/import_colab.py`: unzips the exported results into `data/` and validates them (ids hash, shapes, NaNs).
+- Started locally in the background: BGE-M3, Qwen3-0.6B, and Qwen3-0.6B with instruction (max_len 1024).
