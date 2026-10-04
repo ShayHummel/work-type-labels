@@ -229,3 +229,28 @@ Script `src/05_embedding_models.py`, same protocol as block 1. A bug in the grid
 - **The task instruction is the biggest single lever at 8B:** +0.07 macro-F1 and +0.16 min-F1 over the same model without it. At 0.6B the gain was small.
 - **4B was only embedded without the instruction**, so a 4B-instr run is a missing comparison (about 6 min on an A100).
 - **nomic-embed-code** (a code-retrieval model) is no better than general-purpose Qwen3-4B, as expected for an intent task.
+
+---
+
+## Block 7 (part 1) — Stacking + cross-fitted class bias (16:15–16:30)
+
+`src/06_stack.py` with sets in `data/stack_sets.json`. The meta-model is a multinomial LogReg on standardised base scores (log-probabilities, or decision values for SVM), cross-fitted on the 5 folds.
+
+| Set | Base models | macro-F1 / min-F1 | + class bias (cross-fitted) |
+|---|---|---|---|
+| A | TF-IDF WC LR, Qwen3-0.6B-instr LR | 0.640 / 0.413 | 0.621 / 0.424 |
+| B | Qwen3-8B-instr LR, TF-IDF WC LR | 0.738 / 0.546 | 0.728 / 0.553 |
+| **C** | Qwen3-8B-instr LR + SVM, TF-IDF WC LR, Qwen3-0.6B-instr LR | **0.750 / 0.584** | 0.724 / 0.563 |
+| D | C + Qwen3-8B LR, Qwen3-4B SVM, nomic LR, BGE-M3 LR | 0.748 / 0.579 | 0.722 / 0.554 |
+
+- **Best: stack-C.** Accuracy 0.822, macro ROC-AUC 0.980, macro PR-AUC 0.826.
+- **Stack-C vs the best single model (Qwen3-8B-instr LR):**
+  - Macro-F1 +0.010 (95% CI −0.003 to 0.023, p = 0.065). McNemar p ≈ 8e-13: more rows right (993 vs 702 discordant).
+  - Significant per-class gains on the big classes: Bug fix, Feature dev, Researching, Other (p < 0.05).
+  - The weak classes do not move significantly.
+- **Adding more, weaker embeddings (set D) adds nothing.**
+- **The class bias does not generalise once cross-fitted.**
+  - The bias vectors learned on different 4-fold subsets disagree in sign (e.g. Setup −1.5 vs +1.0), and the held-out fold gets worse on both macro-F1 and min-F1.
+  - Optimising min-F1 directly chases the noisiest class (Optimize, 31 rows per fold).
+  - Conclusion: do not use a min-F1-tuned bias. If a decision layer is used, it needs a smoother objective (e.g. macro-F1, or a single shared prior-correction parameter) and must again be cross-fitted.
+- **Where it stands:** 4 classes are clearly ≥ 0.8 (Other 0.89, Bug fix 0.86, Feature dev 0.82, Researching 0.82). Testing is at 0.79. Setup 0.76, Refactoring 0.70, Optimize 0.65, Architecting 0.64 and Review 0.58 are still short of 0.8.

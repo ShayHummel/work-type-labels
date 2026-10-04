@@ -1,0 +1,6 @@
+{
+  "stack-B": ["emb-qwen3-8b-instr_lr", "tfidf-WC_lr"],
+  "stack-C": ["emb-qwen3-8b-instr_lr", "emb-qwen3-8b-instr_svm", "tfidf-WC_lr", "emb-qwen3-0.6b-instr_lr"],
+  "stack-D": ["emb-qwen3-8b-instr_lr", "emb-qwen3-8b-instr_svm", "tfidf-WC_lr", "emb-qwen3-0.6b-instr_lr",
+              "emb-qwen3-8b_lr", "emb-qwen3-4b_svm", "emb-nomic-code_lr", "emb-bge-m3_lr"]
+}
