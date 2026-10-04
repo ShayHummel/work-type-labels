@@ -192,3 +192,14 @@ Script `src/05_embedding_models.py`, same protocol as block 1. A bug in the grid
 - **The instruction prompt** helps the embedding alone (LogReg min-F1 0.32 → 0.36, SVM 0.29 → 0.37). Inside the fusion it makes no significant macro-F1 difference (Δ CI −0.018 to 0.020, p = 0.42).
 - **kNN is the weakest**: neighbours often carry different teacher labels, consistent with the EDA noise finding.
 - **Runtime issue:** early fusion (sparse TF-IDF plus a dense block in one LogReg) is slow. CV took 2.5 min for BGE, 22 min for Qwen, and 90 min for Qwen-instr (no class weights, slow lbfgs convergence). For later fusions (e.g. Qwen3-4B), use **late fusion** (stack the OOF probabilities of the separate models) instead. It is much cheaper and needs no refit.
+
+### Fine-tuning job hardened before the Colab run (14:50–15:00)
+
+- **Smoke tests on MPS** (64 rows, 3 steps): ModernBERT-large and Qwen3-0.6B + LoRA both train, predict, write their outputs and export.
+  - At their default settings (fp32, batch 16, length 1024) they run out of memory on this Mac. That is a hardware limit, not a code issue.
+  - Added a `--batch-size` override.
+- **Resume test:** start a run, kill it as soon as a checkpoint exists, rerun.
+  - **Bug found:** the kill landed during a checkpoint save, and HF's `get_last_checkpoint` picked the half-written folder, so the run failed with "Can't find a valid checkpoint".
+  - **Fix:** `last_complete_checkpoint()` resumes from the newest checkpoint that has trainer state, optimizer, scheduler and RNG files, and deletes partial folders.
+  - **Retest:** the rerun resumed from checkpoint-5 and finished the fold.
+- **Colab:** Qwen3-Embedding-8B is running on an A100 (40 GB) at about 40 s per 2,000-row chunk, so about 11 min per 8B model.

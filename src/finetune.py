@@ -88,6 +88,18 @@ def encode(tok, texts: list[str], max_len: int) -> list[list[int]]:
     return out
 
 
+def last_complete_checkpoint(ckpt_dir: Path) -> str | None:
+    """Newest checkpoint whose save finished. A GPU lost mid-save leaves a partial folder: delete it."""
+    if not ckpt_dir.exists():
+        return None
+    needed = ("trainer_state.json", "optimizer.pt", "scheduler.pt", "rng_state.pth")
+    for c in sorted(ckpt_dir.glob("checkpoint-*"), key=lambda c: int(c.name.split("-")[1]), reverse=True):
+        if all((c / f).exists() for f in needed):
+            return str(c)
+        shutil.rmtree(c, ignore_errors=True)
+    return None
+
+
 def export_zip(out: Path, key: str) -> None:
     src = out / "ft" / key
     stage = Path("/tmp") / f"ft_{key}"
@@ -108,9 +120,10 @@ def run_fold(key: str, fold: int, args) -> None:
     from sklearn.metrics import f1_score
     from transformers import (AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding, Trainer,
                               TrainingArguments)
-    from transformers.trainer_utils import get_last_checkpoint
 
-    cfg = MODELS[key]
+    cfg = dict(MODELS[key])
+    if args.batch_size:
+        cfg["bs"] = args.batch_size
     fdir = args.out / "ft" / key / f"fold{fold}"
     if (fdir / "done.json").exists():
         log(args.out, key, f"fold {fold} already done — skipping")
@@ -177,7 +190,7 @@ def run_fold(key: str, fold: int, args) -> None:
         logging_steps=50, report_to="none", seed=42, dataloader_num_workers=2 if dev == "cuda" else 0)
     trainer = WeightedTrainer(model=model, args=targs, train_dataset=ds_tr, processing_class=tok,
                               data_collator=DataCollatorWithPadding(tok))
-    last = get_last_checkpoint(str(fdir / "ckpt")) if (fdir / "ckpt").exists() else None
+    last = last_complete_checkpoint(fdir / "ckpt")
     log(args.out, key, f"fold {fold}: train {len(ds_tr)}, val {len(ds_va)}, device {gpu}, bf16={bf16} fp16={fp16}, "
                        f"class_weight={args.class_weight}, " + (f"RESUMING from {last}" if last else "starting"))
     trainer.train(resume_from_checkpoint=last)
@@ -220,6 +233,7 @@ def main() -> None:
     ap.add_argument("--epochs", type=float, default=3)
     ap.add_argument("--lr", type=float, default=None)
     ap.add_argument("--max-len", type=int, default=None)
+    ap.add_argument("--batch-size", type=int, default=None, help="per-device batch (default: model config)")
     ap.add_argument("--class-weight", choices=["inv", "sqrt_inv", "none"], default="inv")
     ap.add_argument("--save-steps", type=int, default=300)
     ap.add_argument("--limit", type=int, default=0, help="smoke test: use only this many training rows")
