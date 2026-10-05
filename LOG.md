@@ -375,3 +375,18 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 - **Why:** the meta-features are already calibrated class scores that combine almost linearly, so there are no interactions left for trees to find.
 - **Decision:** keep the logistic-regression meta-model. It is simpler, and its coefficients show which base model is trusted for which class.
 - The class bias again hurts once cross-fitted.
+
+### Fine-tuning benchmark on A100 (Colab, 40 steps per model) and choice of GPU (09:30)
+
+| Model | s/step | peak GB | per fold, 3 ep | 5 folds, 3 ep |
+|---|---|---|---|---|
+| Qwen3-0.6B full | 0.30 | 9.8 | 22 min | 1.8 h |
+| Qwen3-1.7B full | 0.63 | 31.5 | 42 min | 3.5 h |
+| Qwen3-4B LoRA | 1.33 | 10.7 | 86 min | 7.2 h |
+| Qwen3-8B LoRA | 1.35 | 18.9 | 87 min | 7.2 h |
+| Qwen3-Emb-8B LoRA | 1.36 | 18.8 | 87 min | 7.2 h |
+
+- 4B and 8B LoRA run at the same speed: the bottleneck is gradient checkpointing and small batches, not compute. 8B therefore costs no more than 4B.
+- Shay has access to an H100 (80 GB). Added `--no-gc` (gradient checkpointing off) and `--accum` overrides.
+- The benchmark notebook now compares Qwen3-8B LoRA as-is, with no gc, and with no gc + one batch of 16 (same effective batch). Then the 5-fold run uses the fastest setting that fits (`EXTRA` in the fine-tune notebook).
+- TPUs were not considered: the code is PyTorch/CUDA.

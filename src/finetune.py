@@ -131,14 +131,15 @@ def bench(trainer, key: str, cfg: dict, n_train: int, args, gpu: str, t0: float)
     sec_per_step = (stamps[-1] - stamps[skip]) / max(1, len(stamps) - 1 - skip)
     steps_per_epoch = -(-n_train // (cfg["bs"] * cfg["accum"]))
     peak = torch.cuda.max_memory_allocated() / 1e9 if torch.cuda.is_available() else float("nan")
-    res = {"key": key, "hf": cfg["hf"], "device": gpu, "bench_steps": len(stamps), "sec_per_step": round(sec_per_step, 3),
+    res = {"key": key, "hf": cfg["hf"], "device": gpu, "gradient_checkpointing": not args.no_gc, "bench_steps": len(stamps), "sec_per_step": round(sec_per_step, 3),
            "steps_per_epoch": steps_per_epoch, "peak_gpu_gb": round(peak, 1),
            **{f"est_fold_min_{e}ep": round(sec_per_step * steps_per_epoch * e / 60 + 3, 0) for e in (1, 2, 3)},
            "note": "random batches; the length-grouped sampler starts with the longest batch, so the estimate is "
                    "slightly pessimistic. +3 min for loading and prediction."}
     (args.out / "bench").mkdir(parents=True, exist_ok=True)
     (args.out / "bench" / f"{key}.json").write_text(json.dumps(res, indent=2))
-    log(args.out, key, f"BENCH {sec_per_step:.2f} s/step, peak {peak:.1f} GB → est. per fold: "
+    log(args.out, key, f"BENCH [{gpu}, gc={'off' if args.no_gc else 'on'}, bs={cfg['bs']}x{cfg['accum']}] "
+                       f"{sec_per_step:.2f} s/step, peak {peak:.1f} GB → est. per fold: "
                        f"{res['est_fold_min_2ep']:.0f} min (2 ep), {res['est_fold_min_3ep']:.0f} min (3 ep); "
                        f"5 folds × 3 ep ≈ {5 * res['est_fold_min_3ep'] / 60:.1f} h")
 
@@ -167,6 +168,8 @@ def run_fold(key: str, fold: int, args) -> None:
     cfg = dict(MODELS[key])
     if args.batch_size:
         cfg["bs"] = args.batch_size
+    if args.accum:
+        cfg["accum"] = args.accum
     fdir = args.out / "ft" / key / f"fold{fold}"
     if (fdir / "done.json").exists():
         log(args.out, key, f"fold {fold} already done — skipping")
@@ -196,7 +199,7 @@ def run_fold(key: str, fold: int, args) -> None:
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     lora = bool(cfg.get("lora"))
-    use_gc = bool(cfg.get("gc", lora))
+    use_gc = bool(cfg.get("gc", lora)) and not args.no_gc  # off = faster, needs memory (e.g. H100 80 GB)
     base_dtype = torch.bfloat16 if (lora and bf16) else torch.float32  # frozen base may be bf16; trained weights fp32
     model = AutoModelForSequenceClassification.from_pretrained(
         cfg["hf"], num_labels=len(LABELS), id2label=dict(enumerate(LABELS)),
@@ -280,7 +283,7 @@ def run_fold(key: str, fold: int, args) -> None:
     done = {"key": key, "hf": cfg["hf"], "fold": fold, "n_train": len(ds_tr), "n_val": len(ds_va),
             "max_len": max_len, "truncation": f"head+tail{TAIL_TOKENS}", "epochs": args.epochs,
             "lr": args.lr or cfg["lr"], "batch": cfg["bs"] * cfg["accum"], "class_weight": args.class_weight,
-            "lora": lora, "base_dtype": str(base_dtype), "device": gpu, "bf16": bf16, "fp16": fp16,
+            "lora": lora, "base_dtype": str(base_dtype), "gradient_checkpointing": use_gc, "device": gpu, "bf16": bf16, "fp16": fp16,
             "train_seconds": round(t_train, 1), "total_seconds": round(time.time() - t0, 1),
             "transformers": transformers.__version__, "predict_order": "own-loop-v2", "limit": args.limit, "max_steps": args.max_steps,
             "val_accuracy": float((pv.argmax(1) == y[va_idx]).mean()), "val_macro_F1": float(f1.mean()),
@@ -310,6 +313,8 @@ def main() -> None:
     ap.add_argument("--save-steps", type=int, default=300)
     ap.add_argument("--limit", type=int, default=0, help="smoke test: use only this many training rows")
     ap.add_argument("--max-steps", type=int, default=0, help="smoke test: stop after this many steps")
+    ap.add_argument("--accum", type=int, default=None, help="gradient accumulation (default: model config)")
+    ap.add_argument("--no-gc", action="store_true", help="disable gradient checkpointing (faster, more GPU memory)")
     ap.add_argument("--bench", action="store_true", help="speed/memory benchmark: use with --max-steps (e.g. 40)")
     args = ap.parse_args()
     for k in args.folds:
