@@ -387,6 +387,6 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 | Qwen3-Emb-8B LoRA | 1.36 | 18.8 | 87 min | 7.2 h |
 
 - 4B and 8B LoRA run at the same speed: the bottleneck is gradient checkpointing and small batches, not compute. 8B therefore costs no more than 4B.
-- Shay has access to an H100 (80 GB). Added `--no-gc` (gradient checkpointing off) and `--accum` overrides.
+- Added `--no-gc` (gradient checkpointing off) and `--accum` overrides. H100 turned out not to be available; the benchmark now tests no-gc variants with smaller micro-batches that may fit a 40 GB A100, and can also run on a G4.
 - The benchmark notebook now compares Qwen3-8B LoRA as-is, with no gc, and with no gc + one batch of 16 (same effective batch). Then the 5-fold run uses the fastest setting that fits (`EXTRA` in the fine-tune notebook).
 - TPUs were not considered: the code is PyTorch/CUDA.
