@@ -391,3 +391,15 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 - The benchmark notebook now compares Qwen3-8B LoRA as-is, with no gc, and with no gc + one batch of 16 (same effective batch). Then the 5-fold run uses the fastest setting that fits (`EXTRA` in the fine-tune notebook).
 - TPUs were not considered: the code is PyTorch/CUDA.
 - **EDA §4b added (Shay's request):** semantic near-duplicates with conflicting teacher labels (Qwen3-8B-instr cosine ≥ 0.95). 212 pairs, a table of label clashes, and hand-picked examples with English glosses.
+
+### Qwen3-8B + LoRA, fold 0 (A100, 3 epochs, gradient checkpointing on)
+
+- Fold 0: **macro-F1 0.779, min-F1 0.607, accuracy 0.849.** 1 h 44 min including predictions (training 1 h 40 min, 1.61 s/step).
+- Same rows (fold 0), macro / min / accuracy:
+  - stack-E 0.765 / 0.538 / 0.836
+  - stack-F 0.764 / 0.571 / 0.832
+  - Qwen3-0.6B LoRA 0.729 / 0.571 / 0.801
+  - Qwen3-Emb-8B-instr + LR 0.733 / 0.566 / 0.809
+- **The single fine-tuned 8B model beats every stack on fold 0.** Scale again is the lever.
+- The training loss starts high (9.9 at step 50, against 3.7–4.4 for 0.6B) with grad norms up to 381, then falls normally. The new classification head is initialised on top of 4096-d hidden states, so the first logits are large. No instability after warm-up.
+- Folds 1–4 are running: about 1 h 45 min each, about 7 h in total.
