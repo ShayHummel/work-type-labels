@@ -10,7 +10,10 @@ argmax(log p + b), chosen by coordinate ascent to maximise min-F1, then macro-F1
 4 folds' meta-OOF and applied to the 5th; the reported score is the cross-fitted one. The final b (all folds) is
 saved for the holdout.
 
-Run: uv run python src/06_stack.py
+Meta-model: multinomial LogReg (default) or XGBoost (--xgb; depth 3, eta 0.05, early stopping on an inner 10%
+split of each training part; the holdout model uses the mean of the per-fold best iteration counts).
+
+Run: uv run python src/06_stack.py [sets.json] [--xgb]
 """
 
 import json
@@ -59,20 +62,50 @@ def fit_bias(logp: np.ndarray, y: np.ndarray, rounds: int = 3) -> np.ndarray:
     return b
 
 
-def stack(name: str, exp_ids: list[str], train, C: float = 1.0, cw=None) -> None:
+XGB_PARAMS = dict(objective="multi:softprob", num_class=K, max_depth=3, learning_rate=0.05, subsample=0.8,
+                  colsample_bytree=0.8, min_child_weight=5, reg_lambda=1.0, tree_method="hist", n_jobs=8,
+                  eval_metric="mlogloss")
+
+
+def fit_xgb(X, y, seed=0):
+    """XGBoost meta-model with early stopping on an inner stratified 10% split of the given training rows."""
+    import xgboost as xgb
+    from sklearn.model_selection import train_test_split
+    Xa, Xb, ya, yb = train_test_split(X, y, test_size=0.1, stratify=y, random_state=seed)
+    m = xgb.XGBClassifier(n_estimators=3000, early_stopping_rounds=100, random_state=seed, **XGB_PARAMS)
+    m.fit(Xa, ya, eval_set=[(Xb, yb)], verbose=False)
+    return m
+
+
+def stack(name: str, exp_ids: list[str], train, C: float = 1.0, cw=None, meta_model: str = "lr") -> None:
     y, folds = train.y.values, train.fold.values
     X, Xh = base_features(exp_ids, "oof"), base_features(exp_ids, "holdout")
     meta_oof = np.zeros((len(y), K))
+    best_iters = []
     for k in range(5):
         tr, va = folds != k, folds == k
-        sc = StandardScaler().fit(X[tr])
-        m = LogisticRegression(C=C, class_weight=cw, max_iter=3000).fit(sc.transform(X[tr]), y[tr])
-        meta_oof[va] = m.predict_proba(sc.transform(X[va]))
-    sc = StandardScaler().fit(X)
-    m = LogisticRegression(C=C, class_weight=cw, max_iter=3000).fit(sc.transform(X), y)
-    meta_hold = m.predict_proba(sc.transform(Xh))
-    meta = {"block": 7, "features": "stack of " + ", ".join(exp_ids), "model": "meta-LR",
-            "params": json.dumps({"C": C, "cw": cw})}
+        if meta_model == "xgb":
+            m = fit_xgb(X[tr], y[tr], seed=k)
+            best_iters.append(int(m.best_iteration))
+            meta_oof[va] = m.predict_proba(X[va])
+        else:
+            sc = StandardScaler().fit(X[tr])
+            m = LogisticRegression(C=C, class_weight=cw, max_iter=3000).fit(sc.transform(X[tr]), y[tr])
+            meta_oof[va] = m.predict_proba(sc.transform(X[va]))
+    if meta_model == "xgb":
+        import xgboost as xgb
+        n_est = int(np.mean(best_iters)) + 1  # all OOF rows, no early-stopping split: mean of the fold optima
+        m = xgb.XGBClassifier(n_estimators=n_est, random_state=0, **XGB_PARAMS).fit(X, y)
+        meta_hold = m.predict_proba(Xh)
+        params = {**{k: v for k, v in XGB_PARAMS.items() if k not in ("objective", "num_class")},
+                  "best_iterations_per_fold": best_iters, "n_estimators_final": n_est}
+    else:
+        sc = StandardScaler().fit(X)
+        m = LogisticRegression(C=C, class_weight=cw, max_iter=3000).fit(sc.transform(X), y)
+        meta_hold = m.predict_proba(sc.transform(Xh))
+        params = {"C": C, "cw": cw}
+    meta = {"block": 7, "features": "stack of " + ", ".join(exp_ids),
+            "model": "meta-XGBoost" if meta_model == "xgb" else "meta-LR", "params": json.dumps(params)}
     np.save(DATA / "oof" / f"{name}.npy", meta_oof.astype(np.float32))
     np.save(DATA / "holdout_scores" / f"{name}.npy", meta_hold.astype(np.float32))
     record(name, train, meta_oof, meta)
@@ -90,16 +123,19 @@ def stack(name: str, exp_ids: list[str], train, C: float = 1.0, cw=None) -> None
     np.save(DATA / "oof" / f"{name}+bias.npy", np.exp(biased - biased.max(1, keepdims=True)).astype(np.float32))
     np.save(DATA / "holdout_scores" / f"{name}+bias.npy",
             np.exp(logh + b_all - (logh + b_all).max(1, keepdims=True)).astype(np.float32))
-    record(f"{name}+bias", train, biased, {**meta, "model": "meta-LR + cross-fitted class bias",
-                                           "params": json.dumps({"C": C, "cw": cw, "bias_all": b_all.tolist(),
+    record(f"{name}+bias", train, biased, {**meta, "model": meta["model"] + " + cross-fitted class bias",
+                                           "params": json.dumps({**json.loads(meta["params"]),
+                                                                 "bias_all": b_all.tolist(),
                                                                  "bias_per_fold": per_fold_b})})
 
 
 if __name__ == "__main__":
     import sys
     train, _ = load_data()
-    sets = json.loads(open(sys.argv[1]).read()) if len(sys.argv) > 1 else {
+    files = [a for a in sys.argv[1:] if not a.startswith("--")]
+    sets = json.loads(open(files[0]).read()) if files else {
         "stack-A": ["tfidf-WC_lr", "emb-qwen3-0.6b-instr_lr"],
     }
+    meta_model = "xgb" if "--xgb" in sys.argv else "lr"
     for name, ids in sets.items():
-        stack(name, ids, train)
+        stack(name + ("-xgb" if meta_model == "xgb" else ""), ids, train, meta_model=meta_model)
