@@ -46,6 +46,13 @@ MODELS = {
     # rest). At 1024 tokens × batch 16 with an fp32 base, Qwen3-0.6B ran out of memory on a 40 GB A100.
     "qwen3-0.6b-lora": dict(hf="Qwen/Qwen3-0.6B", lr=1e-4, bs=16, accum=1, max_len=512, lora=True),
     "qwen3-1.7b-lora": dict(hf="Qwen/Qwen3-1.7B", lr=1e-4, bs=8, accum=2, max_len=512, lora=True),
+    "qwen3-4b-lora": dict(hf="Qwen/Qwen3-4B", lr=1e-4, bs=8, accum=2, max_len=512, lora=True),
+    "qwen3-8b-lora": dict(hf="Qwen/Qwen3-8B", lr=5e-5, bs=8, accum=2, max_len=512, lora=True),
+    "qwen3-emb-8b-lora": dict(hf="Qwen/Qwen3-Embedding-8B", lr=5e-5, bs=8, accum=2, max_len=512, lora=True),
+    # Full fine-tuning (all weights, fp32 master + bf16 autocast, gradient checkpointing). 8B in full does not fit
+    # one 40 GB A100 (bf16 weights + grads + fp32 Adam ≈ 130 GB), so the LoRA-vs-full comparison uses 0.6B/1.7B.
+    "qwen3-0.6b-full": dict(hf="Qwen/Qwen3-0.6B", lr=2e-5, bs=16, accum=1, max_len=512, gc=True),
+    "qwen3-1.7b-full": dict(hf="Qwen/Qwen3-1.7B", lr=1e-5, bs=8, accum=2, max_len=512, gc=True),
 }
 TAIL_TOKENS = 128  # head+tail truncation keeps the last 128 tokens (the request often comes after pasted code)
 
@@ -106,6 +113,36 @@ def last_complete_checkpoint(ckpt_dir: Path) -> str | None:
     return None
 
 
+def bench(trainer, key: str, cfg: dict, n_train: int, args, gpu: str, t0: float) -> None:
+    from transformers import TrainerCallback
+
+    stamps = []
+
+    class Clock(TrainerCallback):
+        def on_step_end(self, *a, **k):
+            stamps.append(time.time())
+
+    trainer.add_callback(Clock())
+    trainer.args.save_strategy = "no"
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+    trainer.train()
+    skip = min(5, len(stamps) // 4)  # first steps include warm-up / compilation
+    sec_per_step = (stamps[-1] - stamps[skip]) / max(1, len(stamps) - 1 - skip)
+    steps_per_epoch = -(-n_train // (cfg["bs"] * cfg["accum"]))
+    peak = torch.cuda.max_memory_allocated() / 1e9 if torch.cuda.is_available() else float("nan")
+    res = {"key": key, "hf": cfg["hf"], "device": gpu, "bench_steps": len(stamps), "sec_per_step": round(sec_per_step, 3),
+           "steps_per_epoch": steps_per_epoch, "peak_gpu_gb": round(peak, 1),
+           **{f"est_fold_min_{e}ep": round(sec_per_step * steps_per_epoch * e / 60 + 3, 0) for e in (1, 2, 3)},
+           "note": "random batches; the length-grouped sampler starts with the longest batch, so the estimate is "
+                   "slightly pessimistic. +3 min for loading and prediction."}
+    (args.out / "bench").mkdir(parents=True, exist_ok=True)
+    (args.out / "bench" / f"{key}.json").write_text(json.dumps(res, indent=2))
+    log(args.out, key, f"BENCH {sec_per_step:.2f} s/step, peak {peak:.1f} GB → est. per fold: "
+                       f"{res['est_fold_min_2ep']:.0f} min (2 ep), {res['est_fold_min_3ep']:.0f} min (3 ep); "
+                       f"5 folds × 3 ep ≈ {5 * res['est_fold_min_3ep'] / 60:.1f} h")
+
+
 def export_zip(out: Path, key: str) -> None:
     src = out / "ft" / key
     stage = Path("/tmp") / f"ft_{key}"
@@ -159,6 +196,7 @@ def run_fold(key: str, fold: int, args) -> None:
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     lora = bool(cfg.get("lora"))
+    use_gc = bool(cfg.get("gc", lora))
     base_dtype = torch.bfloat16 if (lora and bf16) else torch.float32  # frozen base may be bf16; trained weights fp32
     model = AutoModelForSequenceClassification.from_pretrained(
         cfg["hf"], num_labels=len(LABELS), id2label=dict(enumerate(LABELS)),
@@ -201,13 +239,16 @@ def run_fold(key: str, fold: int, args) -> None:
         per_device_eval_batch_size=cfg["bs"] * 2, gradient_accumulation_steps=cfg["accum"], warmup_steps=0.1,
         weight_decay=0.01, lr_scheduler_type="linear", bf16=bf16, fp16=fp16, train_sampling_strategy="group_by_length",
         save_strategy="steps", save_steps=args.save_steps, save_total_limit=1, eval_strategy="no",
-        gradient_checkpointing=lora, gradient_checkpointing_kwargs={"use_reentrant": False} if lora else None,
+        gradient_checkpointing=use_gc, gradient_checkpointing_kwargs={"use_reentrant": False} if use_gc else None,
         logging_steps=50, report_to="none", seed=42, dataloader_num_workers=2 if dev == "cuda" else 0)
     trainer = WeightedTrainer(model=model, args=targs, train_dataset=ds_tr, processing_class=tok,
                               data_collator=DataCollatorWithPadding(tok))
     last = last_complete_checkpoint(ckpt)
     log(args.out, key, f"fold {fold}: train {len(ds_tr)}, val {len(ds_va)}, device {gpu}, bf16={bf16} fp16={fp16}, "
                        f"class_weight={args.class_weight}, " + (f"RESUMING from {last}" if last else "starting"))
+    if args.bench:  # measure speed and memory only: no checkpoints, no predictions, no results
+        bench(trainer, key, cfg, len(ds_tr), args, gpu, t0)
+        return
     trainer.train(resume_from_checkpoint=last)
     t_train = time.time() - t0
 
@@ -269,10 +310,12 @@ def main() -> None:
     ap.add_argument("--save-steps", type=int, default=300)
     ap.add_argument("--limit", type=int, default=0, help="smoke test: use only this many training rows")
     ap.add_argument("--max-steps", type=int, default=0, help="smoke test: stop after this many steps")
+    ap.add_argument("--bench", action="store_true", help="speed/memory benchmark: use with --max-steps (e.g. 40)")
     args = ap.parse_args()
     for k in args.folds:
         run_fold(args.model, k, args)
-        export_zip(args.out, args.model)
+        if not args.bench:
+            export_zip(args.out, args.model)
 
 
 if __name__ == "__main__":

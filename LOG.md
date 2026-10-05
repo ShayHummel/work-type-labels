@@ -344,3 +344,18 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
   - Other 0.895, Bug fix 0.866 (0.849–0.881), Feature dev 0.838, Researching 0.830, Testing 0.799 (0.741–0.853), Setup 0.762 (0.725–0.799), Refactoring 0.719 (0.674–0.766), Architecting 0.670 (0.623–0.718), Optimize 0.648 (0.515–0.767), Review 0.635 (0.577–0.693).
   - Overall: macro-F1 0.766 (0.749–0.785), min-F1 0.635 (0.515–0.670).
 - **The class bias again lowers both metrics** when cross-fitted (stack-E+bias 0.754 / 0.627), so it is not used.
+
+---
+
+## Day 2 (2026-10-05) — larger fine-tunes and an XGBoost meta-model
+
+- **Shay's requests:**
+  1. fine-tune Qwen3-8B with and without LoRA, 3 epochs, 5 folds;
+  2. try XGBoost as the stacking meta-model.
+- **Full fine-tuning of Qwen3-8B does not fit one A100 40 GB.** bf16 weights 16 GB + gradients 16 GB + fp32 Adam 64 GB + fp32 master 32 GB ≈ 130 GB. Even an 8-bit optimizer needs ≈ 50 GB; CPU offload needs ≈ 96 GB RAM, and Colab has ≈ 83 GB.
+  - So the LoRA-vs-full comparison is done on 0.6B and 1.7B (1.7B full ≈ 27 GB + activations). Qwen3-8B is fine-tuned with LoRA.
+- **New `finetune.py` configs:**
+  - LoRA: `qwen3-4b-lora`, `qwen3-8b-lora`, and `qwen3-emb-8b-lora` (the Qwen3-Embedding-8B model, our best embedding, as a fine-tuning base).
+  - Full fine-tuning: `qwen3-0.6b-full`, `qwen3-1.7b-full` (fp32 master weights, bf16 autocast, gradient checkpointing).
+- **`--bench` mode:** N real training steps with no checkpoints and no predictions. It writes seconds per step, peak GPU memory and the estimated time per fold to `bench/<model>.json`. Tested locally.
+- **`notebooks/colab_ft_benchmark.ipynb`:** benchmarks 8B-LoRA, Emb-8B-LoRA, 4B-LoRA, 1.7B-full and 0.6B-full, 40 steps each, before the GPU is committed to a 5-fold run.
