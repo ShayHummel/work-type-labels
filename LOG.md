@@ -390,3 +390,4 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 - Added `--no-gc` (gradient checkpointing off) and `--accum` overrides. H100 turned out not to be available; the benchmark now tests no-gc variants with smaller micro-batches that may fit a 40 GB A100, and can also run on a G4.
 - The benchmark notebook now compares Qwen3-8B LoRA as-is, with no gc, and with no gc + one batch of 16 (same effective batch). Then the 5-fold run uses the fastest setting that fits (`EXTRA` in the fine-tune notebook).
 - TPUs were not considered: the code is PyTorch/CUDA.
+- **EDA §4b added (Shay's request):** semantic near-duplicates with conflicting teacher labels (Qwen3-8B-instr cosine ≥ 0.95). 212 pairs, a table of label clashes, and hand-picked examples with English glosses.

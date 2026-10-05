@@ -241,6 +241,64 @@ md(f"- Holdout rows with a train near-duplicate (cos ≥ 0.9): {(sim_ho >= .9).m
    f"(train→train {np.median(sim):.2f}).")
 md()
 
+# ---------------------------------------------------------------- 4b. semantic near-duplicates with conflicting labels
+md("### 4b. Same meaning, different teacher label (semantic near-duplicates)")
+md()
+EMB = ROOT / "data" / "emb" / "qwen3-8b-instr" / "train.npy"
+if EMB.exists():
+    E = np.load(EMB).astype(np.float32)
+    pairs = []
+    for s in range(0, len(E), 2000):
+        S = E[s:s + 2000] @ E.T
+        S[np.arange(S.shape[0]), np.arange(s, s + S.shape[0])] = -1  # exclude self
+        j, v = S.argmax(1), S.max(1)
+        for i in range(S.shape[0]):
+            a, b = s + i, int(j[i])
+            if v[i] >= 0.95 and a < b and train.label[a] != train.label[b]:
+                pairs.append((a, b, float(v[i])))
+    sem = pd.DataFrame(pairs, columns=["a", "b", "cos"])
+    sem["pair"] = [" / ".join(sorted([train.label[a], train.label[b]])) for a, b in zip(sem.a, sem.b)]
+    md(f"Method: each prompt is embedded with Qwen3-Embedding-8B (with the task instruction, see block 5) and matched "
+       f"to its most similar other prompt in train (cosine). **{len(sem)} pairs** with cosine ≥ 0.95 carry different "
+       "teacher labels. Unlike §4 (TF-IDF, shared words), this catches the same request in other words or another "
+       "language. Most frequent label clashes:")
+    md()
+    table(sem.pair.value_counts().head(12).rename("pairs").to_frame(), ".0f")
+else:
+    md("(Requires `data/emb/qwen3-8b-instr/` — produced in block 5; skipped.)")
+    md()
+# Hand-picked examples (row index in train.jsonl, English gloss for non-English text). Every pair below has
+# cosine ≥ 0.95 in the Qwen3-8B-instr embedding and two different teacher labels.
+COLLISIONS = [
+    ("Review / Optimize / Bug fix", [(15451, None), (16512, None), (21785, "what did you change?"),
+                                     (21856, None),
+                                     (22376, "…would setting a default like this avoid the bug?"),
+                                     (22377, "…would doing it like this avoid the bug?")]),
+    ("Architecting / Researching / Other", [(21621, None), (21622, None),
+                                                                             (3648, None), (6455, None),
+                                                                             (3683, None), (2699, None)]),
+    ("Refactoring / Feature dev", [(5946, None), (20864, None), (18345, "modify the code you wrote above?"),
+                                   (18352, "modify this code to fit the existing code?")]),
+    ("Testing / Researching / Other", [(3889, None), (3891, None), (5275, "please run this code. main.py"),
+                                       (7053, "same words, reordered"), (19363, None), (22458, None)]),
+    ("Setup / Bug fix / Researching", [(6378, None), (19174, None), (8292, None), (8294, None)]),
+]
+md("Examples (consecutive rows within a group are the near-duplicate pairs):")
+md()
+for title, rows in COLLISIONS:
+    md(f"**{title}**")
+    md()
+    md("| row | prompt | teacher label |")
+    md("|---|---|---|")
+    for i, gloss in rows:
+        t = train.text[i].replace("|", "\\|").replace("\n", " ")
+        t = t[:150] + ("…" if len(t) > 150 else "")
+        md(f"| {i} | {t}{f' [{gloss}]' if gloss else ''} | **{train.label[i]}** |")
+    md()
+md("Any classifier that gives both prompts of such a pair the same label is 'wrong' on one of them; these "
+   "collisions concentrate in the classes that stay below 0.8 (block 8).")
+md()
+
 # ---------------------------------------------------------------- 5. ordering / conversation structure
 md("## 5. Row order — are prompts grouped by conversation?")
 md()

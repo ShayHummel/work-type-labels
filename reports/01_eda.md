@@ -125,6 +125,80 @@ Examples:
 
 - Holdout rows with a train near-duplicate (cos ≥ 0.9): 6.9%; cos ≥ 0.7: 14.8%. Median holdout→train similarity 0.32 (train→train 0.31).
 
+### 4b. Same meaning, different teacher label (semantic near-duplicates)
+
+Method: each prompt is embedded with Qwen3-Embedding-8B (with the task instruction, see block 5) and matched to its most similar other prompt in train (cosine). **212 pairs** with cosine ≥ 0.95 carry different teacher labels. Unlike §4 (TF-IDF, shared words), this catches the same request in other words or another language. Most frequent label clashes:
+
+| pair                      |   pairs |
+|:--------------------------|--------:|
+| Bug fix / Feature dev     |      37 |
+| Feature dev / Other       |      21 |
+| Bug fix / Review          |      17 |
+| Feature dev / Refactoring |      17 |
+| Other / Researching       |      15 |
+| Feature dev / Review      |      12 |
+| Feature dev / Researching |      11 |
+| Bug fix / Researching     |       9 |
+| Researching / Review      |       8 |
+| Bug fix / Setup           |       7 |
+| Other / Review            |       7 |
+| Bug fix / Refactoring     |       6 |
+
+Examples (consecutive rows within a group are the near-duplicate pairs):
+
+**Review / Optimize / Bug fix**
+
+| row | prompt | teacher label |
+|---|---|---|
+| 15451 | thanks. can you think of any ways to optimize this code? | **Optimize** |
+| 16512 | can this code be improved? | **Review** |
+| 21785 | que es lo que has cambiado [what did you change?] | **Researching** |
+| 21856 | what did you change? | **Review** |
+| 22376 | let { image = '' } = useRouter().query; 이런식으로 기본값을설정하면 버그를 피할 수 있을까? […would setting a default like this avoid the bug?] | **Review** |
+| 22377 | let { image } = useRouter().query??'' 이런식으로 하면 버그르르 피할 수 있을까? […would doing it like this avoid the bug?] | **Bug fix** |
+
+**Architecting / Researching / Other**
+
+| row | prompt | teacher label |
+|---|---|---|
+| 21621 | when a user missed a required field, do you return a 404 or 400? | **Researching** |
+| 21622 | So when a user puts in an invalid input, is it 400 or 404? | **Architecting** |
+| 3648 | What attributes does a parcel shipment have? | **Researching** |
+| 6455 | What attributes does an Air Shipment have to have? | **Architecting** |
+| 3683 | What attributes does a full truckload need to have? | **Other** |
+| 2699 | What attributes does a less than truckload need to have? | **Architecting** |
+
+**Refactoring / Feature dev**
+
+| row | prompt | teacher label |
+|---|---|---|
+| 5946 | now integrate this code into the previous code and put it together | **Feature dev** |
+| 20864 | Combine the last code with the initial code. | **Refactoring** |
+| 18345 | 위에 작성했던 코드에 수정해서 알려줄래? [modify the code you wrote above?] | **Feature dev** |
+| 18352 | 이코드를 기존 코드에 맞게 수정해줄래 [modify this code to fit the existing code?] | **Refactoring** |
+
+**Testing / Researching / Other**
+
+| row | prompt | teacher label |
+|---|---|---|
+| 3889 | can you tell me what will be the output of this testbench | **Researching** |
+| 3891 | can you predict the output of this testbench | **Testing** |
+| 5275 | このコードを実行してください。main.py [please run this code. main.py] | **Testing** |
+| 7053 | main.pyこのコードを実行してください。 [same words, reordered] | **Other** |
+| 19363 | Check it with the plugin. | **Testing** |
+| 22458 | Can you check with the plugin? | **Other** |
+
+**Setup / Bug fix / Researching**
+
+| row | prompt | teacher label |
+|---|---|---|
+| 6378 | ModuleNotFoundError: No module named 'panel' | **Setup** |
+| 19174 | ModuleNotFoundError: No module named 'evdev' | **Bug fix** |
+| 8292 | check which profile aws is using | **Setup** |
+| 8294 | aws find which profile is being used | **Researching** |
+
+Any classifier that gives both prompts of such a pair the same label is 'wrong' on one of them; these collisions concentrate in the classes that stay below 0.8 (block 8).
+
 ## 5. Row order — are prompts grouped by conversation?
 
 - P(label == previous row's label) = 0.472; expected if order were random = 0.181.
