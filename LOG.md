@@ -411,3 +411,25 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 - `note.md` drafted. Final-model numbers are placeholders until the Qwen3-8B LoRA folds are done.
 - Qwen3-8B LoRA fold 1: macro-F1 0.784, min-F1 0.671, accuracy 0.842 (1 h 43 min).
 - Shay must switch the computer off mid-run. The VM disk, and with it the current fold's checkpoints, would be lost. The notebook's default `CKPT_ROOT` is now on Drive (`zuzai-hw/ckpt`): LoRA checkpoints are only ≈ 0.6 GB for 8B, so a recycled VM resumes mid-fold. Full fine-tunes should still use the VM disk.
+
+---
+
+## Qwen3-8B + LoRA, all 5 folds, and final stacking (16:10)
+
+- Colab finished folds 2–4. The A100 was lost once between folds; the run resumed on a new A100. All folds carry the fixed prediction order.
+  - Per fold macro / min F1: 0.779 / 0.607, 0.784 / 0.671, 0.804 / 0.648, 0.776 / 0.641, 0.800 / 0.667.
+  - About 1 h 43 min per fold, ≈ 7.7 GPU-hours in total.
+- **ft-qwen3-8b-lora (single model, OOF on 24,792 rows): macro-F1 0.789, min-F1 0.654, accuracy 0.847, 5 classes ≥ 0.8.** vs stack-E: +0.023 macro (95% CI 0.006–0.039, p = 0.005).
+
+| Stack (LR meta) | Base models | macro / min F1 | acc | classes ≥ 0.8 |
+|---|---|---|---|---|
+| **H** | ft-8B-LoRA, emb-8B-instr LR | **0.794 / 0.665** | 0.854 | **6** |
+| I | H + ft-0.6B-LoRA | 0.793 / 0.657 | 0.854 | 6 |
+| G | I + emb-8B-instr SVM, TF-IDF, emb-0.6B-instr | 0.793 / 0.667 | 0.855 | 5 |
+
+- **Stacking on top of the 8B fine-tune adds little.** Stack-H vs the single model: +0.005 macro (CI −0.006 to 0.017, p = 0.16), though McNemar p ≈ 6e-7 (more rows right). Adding more base models (I, G) adds nothing.
+- **Stack-H per class** (95% CI at holdout scale; `p(F1≤0.8)`):
+  - Other 0.905 (0.894–0.915), Bug fix 0.879 (0.863–0.894), Feature dev 0.863 (0.849–0.875), Researching 0.855 (0.841–0.869), Testing 0.834 (0.779–0.885; p = 0.11), Setup 0.802 (0.768–0.834; p = 0.48)
+  - Refactoring 0.746 (0.703–0.787), Architecting 0.711 (0.664–0.752), Optimize 0.685 (0.568–0.800), Review 0.665 (0.613–0.723)
+  - macro-F1 0.794 (0.777–0.812), accuracy 0.854.
+- The class bias again lowers the scores when cross-fitted, so it is not used.
