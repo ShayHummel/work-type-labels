@@ -433,3 +433,13 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
   - Refactoring 0.746 (0.703–0.787), Architecting 0.711 (0.664–0.752), Optimize 0.685 (0.568–0.800), Review 0.665 (0.613–0.723)
   - macro-F1 0.794 (0.777–0.812), accuracy 0.854.
 - The class bias again lowers the scores when cross-fitted, so it is not used.
+
+## Finalisation (16:30)
+
+- **Final model: stack-H**, chosen by Shay on performance: the Qwen3-8B LoRA fine-tune plus Qwen3-Emb-8B-instr LogReg, combined by a LogReg meta-model.
+- **Check of the holdout inputs.** Feeding the meta-model the *averaged* 5 fine-tuned fold models and a *full-train* embedding LR shifted its inputs: holdout agreement with the fine-tune was 0.922, against 0.939 out of fold.
+  - `src/10_final_holdout.py` now applies the meta-model per fold (fine-tune k + embedding LR trained on the same 4 folds) and averages the 5 outputs.
+  - Agreement becomes 0.948, and 179 holdout labels (2.9%) change.
+- `predictions.jsonl` written from `stack-H-perfold`: 6,199 rows, unique ids, all 10 labels. The predicted mix matches train within 0.8 pp per class.
+- **Meta-model weights (own-class coefficient share on the fine-tune):** 0.23 for Optimize, 0.35 for Refactoring, 0.39 for Setup, about 0.5 for the large classes. The embedding LR carries the rare classes.
+- `note.md` finalised.
