@@ -403,3 +403,9 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 - **The single fine-tuned 8B model beats every stack on fold 0.** Scale again is the lever.
 - The training loss starts high (9.9 at step 50, against 3.7–4.4 for 0.6B) with grad norms up to 381, then falls normally. The new classification head is initialised on top of 4096-d hidden states, so the first logits are large. No instability after warm-up.
 - Folds 1–4 are running: about 1 h 45 min each, about 7 h in total.
+
+### Deliverable tooling (10:00)
+
+- `src/09_predict.py <exp_id>`: turns a model's holdout scores into `predictions.jsonl`. Checks: 6,199 rows, unique ids in holdout order, only the ten label names, all ten labels used; the written file is re-read and verified. Also writes `reports/09_predictions.md`: predicted mix vs train mix, and expected per-class F1 with CI.
+  - Dry run with stack-E: all checks pass. The predicted holdout mix matches the train mix within 0.6 pp per class.
+- `note.md` drafted. Final-model numbers are placeholders until the Qwen3-8B LoRA folds are done.

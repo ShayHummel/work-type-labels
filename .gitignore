@@ -12,3 +12,4 @@ data/logs/
 data/*.log
 data/ft/
 data/exports/
+data/predictions_dryrun*
