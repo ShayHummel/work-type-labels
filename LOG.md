@@ -359,3 +359,19 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
   - Full fine-tuning: `qwen3-0.6b-full`, `qwen3-1.7b-full` (fp32 master weights, bf16 autocast, gradient checkpointing).
 - **`--bench` mode:** N real training steps with no checkpoints and no predictions. It writes seconds per step, peak GPU memory and the estimated time per fold to `bench/<model>.json`. Tested locally.
 - **`notebooks/colab_ft_benchmark.ipynb`:** benchmarks 8B-LoRA, Emb-8B-LoRA, 4B-LoRA, 1.7B-full and 0.6B-full, 40 steps each, before the GPU is committed to a 5-fold run.
+
+### XGBoost as the stacking meta-model (09:15)
+
+- Installed `libomp` with Homebrew (Shay approved); XGBoost needs the OpenMP runtime on macOS.
+- **Setup:** depth-3 trees, eta 0.05, subsample and colsample 0.8, early stopping on an inner stratified 10% split of each training part. The best iteration counts per fold were 162–186, very stable. Cross-fitted on the same folds as the LR meta-model; the holdout model uses the mean (176 trees).
+
+| Stack | LR meta (macro / min F1) | XGBoost meta | Δ macro-F1 (95% CI) | McNemar p |
+|---|---|---|---|---|
+| C | 0.750 / 0.584 | 0.742 / 0.569 | −0.008 (−0.019 to 0.003) | 0.99 |
+| E | 0.766 / 0.635 | 0.766 / 0.633 | 0.000 (−0.011 to 0.012) | 0.14 |
+| F | 0.764 / 0.624 | 0.761 / 0.618 | −0.003 (−0.013 to 0.006) | 0.86 |
+
+- **No gain from XGBoost.** Per class the two meta-models are within ±0.01 (Setup +0.012 with XGBoost), and macro PR-AUC is identical (0.844).
+- **Why:** the meta-features are already calibrated class scores that combine almost linearly, so there are no interactions left for trees to find.
+- **Decision:** keep the logistic-regression meta-model. It is simpler, and its coefficients show which base model is trusted for which class.
+- The class bias again hurts once cross-fitted.
