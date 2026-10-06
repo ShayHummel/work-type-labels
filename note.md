@@ -157,6 +157,12 @@ Evidence: `reports/07_error_analysis.md`, EDA §4 and §4b.
   fine-tuning.
 - `src/06_stack.py`: stacking.
 - `src/07_error_analysis.py`: error analysis.
+- `src/fix_ft_order.py`: needed only for the 0.6B fold 0 inside its zip, which was written before the prediction-order
+  fix; `08_collect_ft.py` refuses unverified folds.
 - `src/10_final_holdout.py`, then `src/09_predict.py stack-H-perfold`: `predictions.jsonl`.
+- `src/11_audit.py`: independent re-computation and invariant checks of the whole chain (0 failures,
+  `reports/11_audit.md`).
+  - It found and fixed one inconsistency: the final holdout step had built the meta-model's inputs in float32 instead
+    of float64. 3 of 6,199 labels changed.
 
 Environment: `uv sync`.

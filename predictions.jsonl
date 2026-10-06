@@ -405,7 +405,7 @@
 {"id": "devgpt-550e8dc2439566ff", "label": "Researching"}
 {"id": "devgpt-c780d73bcc003812", "label": "Researching"}
 {"id": "devgpt-05895fa3e4abfb8e", "label": "Researching"}
-{"id": "devgpt-a267ab749048f14c", "label": "Researching"}
+{"id": "devgpt-a267ab749048f14c", "label": "Review"}
 {"id": "devgpt-119c7d2730967f70", "label": "Optimize"}
 {"id": "devgpt-d0d1587d05696119", "label": "Setup"}
 {"id": "devgpt-f926f0602323c850", "label": "Researching"}
@@ -1301,7 +1301,7 @@
 {"id": "devgpt-7e125fbd42e0002a", "label": "Researching"}
 {"id": "devgpt-0601ec21fc247687", "label": "Bug fix"}
 {"id": "devgpt-18b17f8671cb62d7", "label": "Setup"}
-{"id": "devgpt-566fdfe793520bf9", "label": "Researching"}
+{"id": "devgpt-566fdfe793520bf9", "label": "Setup"}
 {"id": "devgpt-0ed8bc1b21fc68d6", "label": "Architecting"}
 {"id": "devgpt-ae9cd79ec2e130e9", "label": "Researching"}
 {"id": "devgpt-56a4760ba0ddc4c1", "label": "Architecting"}
@@ -2089,7 +2089,7 @@
 {"id": "devgpt-c4f1d6e038a6ae26", "label": "Bug fix"}
 {"id": "devgpt-04c94dbd099be3e1", "label": "Refactoring"}
 {"id": "devgpt-34e8ae4e03336086", "label": "Bug fix"}
-{"id": "devgpt-05a0554fd0f6bc78", "label": "Feature dev"}
+{"id": "devgpt-05a0554fd0f6bc78", "label": "Refactoring"}
 {"id": "devgpt-5953a5405d7bb3b3", "label": "Bug fix"}
 {"id": "devgpt-3ef89843890c7edc", "label": "Refactoring"}
 {"id": "devgpt-eb8ba939e80cf598", "label": "Feature dev"}

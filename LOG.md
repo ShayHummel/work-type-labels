@@ -443,3 +443,32 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 - `predictions.jsonl` written from `stack-H-perfold`: 6,199 rows, unique ids, all 10 labels. The predicted mix matches train within 0.8 pp per class.
 - **Meta-model weights (own-class coefficient share on the fine-tune):** 0.23 for Optimize, 0.35 for Refactoring, 0.39 for Setup, about 0.5 for the large classes. The embedding LR carries the rare classes.
 - `note.md` finalised.
+
+---
+
+## Audit of the whole process (2026-10-06)
+
+`src/11_audit.py` → `reports/11_audit.md`. Key results are recomputed independently from the raw files, and invariants are checked.
+
+- **A. Data:** unique ids, no train/holdout id or text overlap, folds aligned and stratified (≤ 0.016 pp), label set.
+- **B. Embeddings:** the Qwen3-8B-instr manifest ids hash equals the train+holdout order; row counts.
+- **C. Base model B (embedding + LR):** retraining the LR reproduces the saved holdout and fold-0 OOF probabilities exactly (|Δp| = 0), which also confirms holdout row order.
+  - Hyper-parameters were chosen on fold 0, but fold 0 scores below the others (0.733 vs 0.742), so there is no visible optimism.
+- **D. Fine-tunes (8B and 0.6B):**
+  - all 5 folds share an identical config; there are no smoke-test folds; every fold has a verified prediction order;
+  - val rows equal fold rows; OOF equals the fold files; the `done.json` metrics reproduce;
+  - probabilities are valid; the saved holdout equals the mean of the folds;
+  - the fold models' holdout predictions agree 0.90–0.91 (8B) and 0.86–0.88 (0.6B), against ≈ 0.18 by chance. That includes the repaired 0.6B fold 0.
+- **E. Stacking:** stack-H OOF reproduces independently.
+  - **Bug found:** `10_final_holdout.py` built the meta-model's features in float32, while `06_stack.py` (the evaluated meta-model) uses float64. The LR solver stops at a tolerance, so the two meta-models differed slightly (12 OOF labels; max |Δp| 0.018).
+  - **Fixed** to float64. The audit now checks that the final holdout script uses exactly the evaluated meta-model (coefficients and scaler). **3 of 6,199 final labels changed.** OOF metrics are unchanged.
+- **F. Evaluation module:** per-class F1, precision, recall and accuracy equal scikit-learn.
+- **G. predictions.jsonl:**
+  - exact columns, one row per holdout id in file order, the ten labels with all used;
+  - labels equal the argmax of the final scores; valid JSON per line;
+  - holdout agreement with each base model is close to its OOF agreement (0.948 vs 0.939; 0.887 vs 0.875), so rows are aligned.
+- **Also verified:** the "text only" embedding runs had no hidden prompt (sentence-transformers `default_prompt_name` is null for Qwen3-Embedding).
+- **Result: 0 failed checks.**
+- **Known caveats (not bugs):**
+  - stack-H was chosen among several stacks on the same OOF scores; the differences are ≤ 0.001 macro-F1, so selection optimism is negligible;
+  - the holdout uses the 5 fold models (each trained on 80% of train), not a refit on all of train.

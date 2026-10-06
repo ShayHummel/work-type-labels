@@ -7,14 +7,14 @@ Written to `predictions.jsonl`: 6199 rows, 6199 unique ids, 10 of 10 labels used
 |              |   holdout predicted |   train (teacher) |   holdout predicted % |   train % |
 |:-------------|--------------------:|------------------:|----------------------:|----------:|
 | Bug fix      |                 897 |              3536 |                  14.5 |      14.3 |
-| Feature dev  |                1418 |              5574 |                  22.9 |      22.5 |
-| Refactoring  |                 225 |               971 |                   3.6 |       3.9 |
+| Feature dev  |                1417 |              5574 |                  22.9 |      22.5 |
+| Refactoring  |                 226 |               971 |                   3.6 |       3.9 |
 | Architecting |                 216 |              1016 |                   3.5 |       4.1 |
-| Researching  |                1246 |              4782 |                  20.1 |      19.3 |
+| Researching  |                1244 |              4782 |                  20.1 |      19.3 |
 | Testing      |                 110 |               436 |                   1.8 |       1.8 |
-| Review       |                 162 |               736 |                   2.6 |       3   |
+| Review       |                 163 |               736 |                   2.6 |       3   |
 | Optimize     |                  44 |               155 |                   0.7 |       0.6 |
-| Setup        |                 303 |              1214 |                   4.9 |       4.9 |
+| Setup        |                 304 |              1214 |                   4.9 |       4.9 |
 | Other        |                1578 |              6372 |                  25.5 |      25.7 |
 
 ## Expected per-class F1 (out-of-fold on train, 95% CI for a holdout-sized sample)

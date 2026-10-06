@@ -23,8 +23,11 @@ train, hold = load_data()
 y, folds = train.y.values, train.fold.values
 
 
-def feats(ft_proba, emb_proba):  # same transform as src/06_stack.py: log-probabilities
-    return np.hstack([np.log(np.clip(ft_proba, 1e-6, 1)), np.log(np.clip(emb_proba, 1e-6, 1))])
+def feats(ft_proba, emb_proba):
+    """Same transform as src/06_stack.py, including float64: the meta-LR's solver stops at a tolerance, so float32
+    inputs give a slightly different solution (12 OOF labels differ) than the meta-model that was evaluated."""
+    return np.hstack([np.log(np.clip(np.asarray(ft_proba, np.float64), 1e-6, 1)),
+                      np.log(np.clip(np.asarray(emb_proba, np.float64), 1e-6, 1))])
 
 
 # meta-model on all OOF rows (identical to the one behind stack-H's holdout scores)
