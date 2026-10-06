@@ -472,3 +472,7 @@ Script `src/07_error_analysis.py` → `reports/07_error_analysis.md`. The first 
 - **Known caveats (not bugs):**
   - stack-H was chosen among several stacks on the same OOF scores; the differences are ≤ 0.001 macro-F1, so selection optimism is negligible;
   - the holdout uses the 5 fold models (each trained on 80% of train), not a refit on all of train.
+
+## Submission (2026-10-06)
+
+- Pull request opened: https://github.com/eladhirsch-zuzai/work-type-labels/pull/1 (head `8abbce5`).
